@@ -65,7 +65,7 @@
 
   function setStatus(msg, isError) {
     staffStatus.textContent = msg;
-    staffStatus.style.color = isError ? '#ffb4b4' : '';
+    staffStatus.style.color = isError ? '#a4232f' : '';
   }
 
   async function showCustomer(customer) {
