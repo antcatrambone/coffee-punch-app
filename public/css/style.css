@@ -8,6 +8,11 @@
   --brown-dark: #5c1220;
   --accent: #f99d1c;
   --cream: #fbf3e2;
+
+  /* Fredoka = rounded, friendly display font for headings/buttons.
+     Nunito = warm, readable body font. Both loaded via Google Fonts. */
+  --font-display: 'Fredoka', -apple-system, sans-serif;
+  --font-body: 'Nunito', -apple-system, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -15,7 +20,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   background: linear-gradient(180deg, #fbf6ea 0%, #f2e3c4 100%);
   color: var(--ink);
   display: flex;
@@ -46,8 +51,9 @@ body {
 
 .brand h1 {
   margin: 0 0 4px;
-  font-size: 1.6rem;
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
@@ -55,7 +61,7 @@ body {
   margin: 0;
   color: var(--brown);
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.02em;
 }
 
@@ -72,7 +78,7 @@ body {
 .panel label {
   display: block;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
   margin: 14px 0 6px;
 }
 
@@ -81,6 +87,7 @@ body {
   padding: 12px 14px;
   border: 2px solid var(--kraft-dark);
   border-radius: 10px;
+  font-family: var(--font-body);
   font-size: 1rem;
   background: #fff;
 }
@@ -93,8 +100,10 @@ body {
   border-radius: 10px;
   background: var(--accent);
   color: #fff;
-  font-size: 1rem;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
 }
 
@@ -143,12 +152,15 @@ body {
 
 .card-header h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 600;
   color: var(--brown-dark);
 }
 
 .card-header .status {
   font-size: 0.85rem;
+  font-weight: 700;
   color: var(--brown);
   margin-top: 2px;
 }
@@ -230,7 +242,8 @@ body {
   background: var(--accent);
   color: #fff;
   text-align: center;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
   font-size: 0.95rem;
   display: none;
 }
@@ -256,8 +269,8 @@ body {
 .qr-area p {
   margin: 0 0 10px;
   font-size: 0.8rem;
+  font-weight: 700;
   color: var(--brown);
-  font-weight: 600;
 }
 
 #qrcode {
@@ -279,6 +292,7 @@ body {
   margin-top: 16px;
   color: var(--brown);
   opacity: 0.85;
+  font-family: var(--font-body);
   font-size: 0.85rem;
   text-decoration: underline;
   cursor: pointer;
@@ -314,6 +328,8 @@ body {
 
 .result-card h3 {
   margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-weight: 600;
   color: var(--brown-dark);
 }
 
@@ -333,9 +349,10 @@ body {
   padding: 12px;
   border: none;
   border-radius: 10px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
   cursor: pointer;
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .btn-punch { background: var(--accent); color: #fff; }
@@ -346,7 +363,7 @@ body {
   text-align: center;
   color: var(--brown-dark);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
   min-height: 1.2em;
   margin-top: 12px;
 }

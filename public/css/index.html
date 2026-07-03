@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Coffee Punch Card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img id="logoImg" class="logo-img" src="logo.webp" alt="" onerror="this.style.display='none'" />
+      <h1 id="shopName">Coffee Punch Card</h1>
+      <p id="shopTagline">Buy 10, get the 11th free</p>
+    </div>
+
+    <div class="panel">
+      <p style="margin:0;font-size:0.9rem;">Enter your email or phone — we'll remember you!</p>
+
+      <label for="firstName">First name</label>
+      <input id="firstName" type="text" placeholder="Jane" autocomplete="given-name" />
+
+      <label for="lastName">Last name</label>
+      <input id="lastName" type="text" placeholder="Doe" autocomplete="family-name" />
+
+      <label for="email">Email address</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email" />
+
+      <label for="phone">Phone number</label>
+      <input id="phone" type="tel" placeholder="(555) 123-4567" autocomplete="tel" />
+
+      <label for="birthday">Birthday <span style="font-weight:400;">(get a free coffee that day!)</span></label>
+      <input id="birthday" type="date" autocomplete="bday" />
+
+      <button id="submitBtn">Get my punch card</button>
+      <div class="error" id="errorMsg"></div>
+    </div>
+
+    <p class="hint">Only email or phone is required — everything else is optional.</p>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    document.getElementById('shopName').textContent = window.SHOP_CONFIG.name;
+    document.getElementById('shopTagline').textContent = window.SHOP_CONFIG.tagline;
+
+    const firstNameInput = document.getElementById('firstName');
+    const lastNameInput = document.getElementById('lastName');
+    const emailInput = document.getElementById('email');
+    const phoneInput = document.getElementById('phone');
+    const birthdayInput = document.getElementById('birthday');
+    const errorMsg = document.getElementById('errorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Auto-load a card already created on this device.
+    const savedToken = localStorage.getItem('punchCardToken');
+    if (savedToken) {
+      window.location.href = `card.html?token=${encodeURIComponent(savedToken)}`;
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      errorMsg.textContent = '';
+      const firstName = firstNameInput.value.trim();
+      const lastName = lastNameInput.value.trim();
+      const email = emailInput.value.trim();
+      const phone = phoneInput.value.trim();
+      const birthday = birthdayInput.value;
+
+      if (!email && !phone) {
+        errorMsg.textContent = 'Enter an email address or phone number.';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'One sec…';
+
+      try {
+        const res = await fetch('/api/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firstName, lastName, email, phone, birthday }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+
+        localStorage.setItem('punchCardToken', data.token);
+        window.location.href = `card.html?token=${encodeURIComponent(data.token)}`;
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Get my punch card';
+      }
+    });
+  </script>
+</body>
+</html>

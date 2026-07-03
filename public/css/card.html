@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>My Punch Card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img id="logoImg" class="logo-img" src="logo.webp" alt="" onerror="this.style.display='none'" />
+      <h1 id="shopName">Coffee Punch Card</h1>
+      <p id="shopTagline">Buy 10, get the 11th free</p>
+    </div>
+
+    <div class="card" id="card">
+      <div class="card-header">
+        <h2>My Punch Card</h2>
+        <div class="status" id="statusLine">Loading your card…</div>
+      </div>
+
+      <div class="punch-grid" id="punchGrid"></div>
+
+      <div class="reward-banner" id="rewardBanner">🎉 Free coffee unlocked! Show this to staff.</div>
+
+      <div class="qr-area">
+        <p>Show this to staff at checkout</p>
+        <div id="qrcode"></div>
+      </div>
+
+      <div class="contact-line" id="contactLine"></div>
+    </div>
+
+    <button class="switch-link" id="switchLink">Not you? Use a different email/phone</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/sounds.js"></script>
+  <script src="js/card.js"></script>
+</body>
+</html>
