@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>My Punch Card</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <h1 id="shopName">☕ Coffee Punch Card</h1>
+      <p id="shopTagline">Buy 10, get the 11th free</p>
+    </div>
+
+    <div class="card" id="card">
+      <div class="card-header">
+        <h2>My Punch Card</h2>
+        <div class="status" id="statusLine">Loading your card…</div>
+      </div>
+
+      <div class="punch-grid" id="punchGrid"></div>
+
+      <div class="reward-banner" id="rewardBanner">🎉 Free coffee unlocked! Show this to staff.</div>
+
+      <div class="qr-area">
+        <p>Show this to staff at checkout</p>
+        <div id="qrcode"></div>
+      </div>
+
+      <div class="contact-line" id="contactLine"></div>
+    </div>
+
+    <button class="switch-link" id="switchLink">Not you? Use a different email/phone</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.9.2/confetti.browser.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/sounds.js"></script>
+  <script src="js/card.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "coffee-punch-app",
+  "version": "1.0.0",
+  "description": "Virtual punch card loyalty app for a coffee shop — buy 10 coffees, get the 11th free.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "uuid": "^9.0.1"
+  }
+}

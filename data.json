@@ -1,0 +1,13 @@
+{
+  "customers": [
+    {
+      "token": "3f129526-dc27-41b5-88f8-7456f911591f",
+      "email": "anthony@example.com",
+      "phone": null,
+      "punches": 0,
+      "freeRewards": 0,
+      "totalCoffees": 10,
+      "createdAt": "2026-07-03T14:59:17.850Z"
+    }
+  ]
+}

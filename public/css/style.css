@@ -1,0 +1,336 @@
+:root {
+  --kraft: #e9d8ae;
+  --kraft-dark: #c9a86a;
+  --ink: #3a2a1a;
+  --brown: #6f4e2c;
+  --brown-dark: #4a3218;
+  --accent: #d0562e;
+  --cream: #fbf3e2;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(180deg, #2c1a10, #4a3218);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 420px;
+}
+
+.brand {
+  text-align: center;
+  color: var(--cream);
+  margin-bottom: 18px;
+}
+
+.brand h1 {
+  margin: 0 0 4px;
+  font-size: 1.6rem;
+}
+
+.brand p {
+  margin: 0;
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+/* ---------- Signup form ---------- */
+
+.panel {
+  background: var(--cream);
+  border-radius: 18px;
+  padding: 28px 24px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+}
+
+.panel label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+
+.panel input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid var(--kraft-dark);
+  border-radius: 10px;
+  font-size: 1rem;
+  background: #fff;
+}
+
+.panel button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 13px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panel button:active { transform: translateY(1px); }
+
+.error {
+  color: #a4232f;
+  font-size: 0.85rem;
+  margin-top: 10px;
+  min-height: 1em;
+}
+
+.hint {
+  text-align: center;
+  color: var(--cream);
+  opacity: 0.7;
+  font-size: 0.8rem;
+  margin-top: 14px;
+}
+
+/* ---------- Punch card ---------- */
+
+.card {
+  position: relative;
+  background: var(--kraft);
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.02) 0, rgba(0,0,0,0.02) 1px, transparent 1px, transparent 3px);
+  border-radius: 20px;
+  padding: 22px 20px 26px;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.4), inset 0 0 0 2px rgba(255,255,255,0.25);
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 2px dashed var(--kraft-dark);
+  border-radius: 14px;
+  pointer-events: none;
+}
+
+.card-header {
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--brown-dark);
+}
+
+.card-header .status {
+  font-size: 0.85rem;
+  color: var(--brown);
+  margin-top: 2px;
+}
+
+.punch-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin: 20px 4px 6px;
+  position: relative;
+  z-index: 1;
+}
+
+.slot {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px dashed var(--kraft-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  background: rgba(255,255,255,0.15);
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+
+.slot.filled {
+  border-style: solid;
+  border-color: var(--brown);
+  background: var(--brown);
+  color: var(--cream);
+  transform: scale(1.02);
+}
+
+.slot.pop {
+  animation: slotPop 0.5s ease;
+}
+
+@keyframes slotPop {
+  0% { transform: scale(0.6); }
+  55% { transform: scale(1.25); }
+  100% { transform: scale(1.02); }
+}
+
+.stamp {
+  position: absolute;
+  z-index: 5;
+  font-size: 2.6rem;
+  pointer-events: none;
+  opacity: 0;
+  filter: drop-shadow(0 6px 6px rgba(0,0,0,0.35));
+}
+
+.stamp.animate {
+  animation: stampDrop 0.55s cubic-bezier(.2,1.4,.4,1) forwards;
+}
+
+@keyframes stampDrop {
+  0%   { opacity: 1; transform: translate(-50%, -140px) scale(1.3) rotate(-18deg); }
+  65%  { opacity: 1; transform: translate(-50%, 4px) scale(1.05) rotate(6deg); }
+  80%  { transform: translate(-50%, -6px) scale(0.98) rotate(2deg); }
+  100% { opacity: 0; transform: translate(-50%, 0) scale(0.9) rotate(0deg); }
+}
+
+.card.shake {
+  animation: cardShake 0.35s ease;
+}
+
+@keyframes cardShake {
+  0%, 100% { transform: translate(0,0); }
+  25% { transform: translate(-2px, 1px) rotate(-0.4deg); }
+  50% { transform: translate(2px, -1px) rotate(0.4deg); }
+  75% { transform: translate(-1px, 1px) rotate(-0.2deg); }
+}
+
+.reward-banner {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: none;
+}
+
+.reward-banner.show {
+  display: block;
+  animation: bannerIn 0.4s ease;
+}
+
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.qr-area {
+  margin-top: 20px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+}
+
+.qr-area p {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: var(--brown);
+  font-weight: 600;
+}
+
+#qrcode {
+  display: flex;
+  justify-content: center;
+}
+
+.contact-line {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--brown);
+  margin-top: 14px;
+  opacity: 0.8;
+}
+
+.switch-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  color: var(--cream);
+  opacity: 0.75;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* ---------- Staff page ---------- */
+
+#reader {
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.divider {
+  text-align: center;
+  color: var(--brown);
+  opacity: 0.6;
+  font-size: 0.8rem;
+  margin: 18px 0;
+}
+
+.result-card {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--kraft);
+  display: none;
+}
+
+.result-card.show { display: block; }
+
+.result-card h3 {
+  margin: 0 0 4px;
+  color: var(--brown-dark);
+}
+
+.result-card .contact {
+  font-size: 0.85rem;
+  color: var(--brown);
+  margin-bottom: 10px;
+}
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-row button {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.btn-punch { background: var(--accent); color: #fff; }
+.btn-redeem { background: var(--brown-dark); color: #fff; }
+.btn-redeem:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.staff-status {
+  text-align: center;
+  color: var(--cream);
+  font-size: 0.85rem;
+  min-height: 1.2em;
+  margin-top: 12px;
+}
