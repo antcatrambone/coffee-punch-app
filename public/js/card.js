@@ -61,7 +61,9 @@
   }
 
   function renderContact(c) {
-    contactLine.textContent = c.email || c.phone || '';
+    const name = [c.firstName, c.lastName].filter(Boolean).join(' ');
+    const contact = c.email || c.phone || '';
+    contactLine.textContent = name ? `${name} · ${contact}` : contact;
   }
 
   function renderStatus(c) {
@@ -70,6 +72,7 @@
     } else {
       statusLine.textContent = `${c.punches} / ${c.punchesNeeded} punches`;
     }
+    rewardBanner.textContent = '🎉 Free coffee unlocked! Show this to staff.';
     rewardBanner.classList.toggle('show', c.freeRewards > 0);
   }
 
@@ -109,6 +112,12 @@
     }
   }
 
+  function celebrateBirthday(c) {
+    rewardBanner.textContent = `🎂 Happy birthday${c.firstName ? ', ' + c.firstName : ''}! We added a free coffee just for you.`;
+    rewardBanner.classList.add('show');
+    celebrateReward();
+  }
+
   async function loadCustomer() {
     const res = await fetch(`/api/customer/${encodeURIComponent(token)}`);
     if (!res.ok) {
@@ -122,6 +131,11 @@
     renderStatus(state);
     renderContact(state);
     renderQR();
+
+    if (state.birthdayGranted) {
+      // Give the page a moment to settle before celebrating.
+      setTimeout(() => celebrateBirthday(state), 500);
+    }
   }
 
   function connectSocket() {

@@ -68,9 +68,14 @@
     staffStatus.style.color = isError ? '#a4232f' : '';
   }
 
+  function customerDisplayName(customer) {
+    const name = [customer.firstName, customer.lastName].filter(Boolean).join(' ');
+    return name || customer.email || customer.phone || 'Customer';
+  }
+
   async function showCustomer(customer) {
     currentCustomer = customer;
-    resultName.textContent = customer.email || customer.phone || 'Customer';
+    resultName.textContent = customerDisplayName(customer);
     resultStatus.textContent = customer.freeRewards > 0
       ? `${customer.freeRewards} free coffee ready · ${customer.punches}/${customer.punchesNeeded} punches toward next`
       : `${customer.punches}/${customer.punchesNeeded} punches`;
@@ -97,7 +102,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       await showCustomer(data);
-      setStatus('');
+      setStatus(data.birthdayGranted ? '🎂 It\'s their birthday — a free coffee was just added!' : '');
     } catch (err) {
       setStatus(err.message, true);
     }
@@ -153,7 +158,9 @@
           try {
             const customer = await fetchByToken(decodedText.trim());
             await showCustomer(customer);
-            setStatus('Card found — tap "Add punch" to confirm.');
+            setStatus(customer.birthdayGranted
+              ? '🎂 It\'s their birthday — a free coffee was just added!'
+              : 'Card found — tap "Add punch" to confirm.');
           } catch (err) {
             setStatus(err.message, true);
           }
