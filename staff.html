@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Staff Scanner</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img id="logoImg" class="logo-img" src="img/logo.webp" alt="" onerror="this.style.display='none'" />
+      <h1 id="shopName">Staff Scanner</h1>
+      <p id="shopTagline">Scan a customer's card to add a punch</p>
+    </div>
+
+    <!-- PIN gate -->
+    <div class="panel" id="pinPanel">
+      <label for="pin">Staff PIN</label>
+      <input id="pin" type="password" inputmode="numeric" placeholder="••••" />
+      <button id="pinBtn">Unlock scanner</button>
+      <div class="error" id="pinError"></div>
+    </div>
+
+    <!-- Scanner + manual lookup -->
+    <div class="panel" id="scanPanel" style="display:none;">
+      <div id="reader"></div>
+
+      <div class="divider">— or look up by email / phone —</div>
+
+      <label for="contact">Customer email or phone</label>
+      <input id="contact" type="text" placeholder="you@example.com or (555) 123-4567" />
+      <button id="lookupBtn">Find customer</button>
+
+      <div class="result-card" id="resultCard">
+        <h3 id="resultName">Customer</h3>
+        <div class="contact" id="resultStatus"></div>
+        <div class="btn-row">
+          <button class="btn-punch" id="punchBtn">+ Add punch</button>
+          <button class="btn-redeem" id="redeemBtn">Redeem free coffee</button>
+        </div>
+      </div>
+
+      <div class="staff-status" id="staffStatus"></div>
+      <button class="switch-link" id="lockBtn">Lock scanner</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/staff.js"></script>
+</body>
+</html>
