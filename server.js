@@ -42,15 +42,6 @@ function publicCustomer(c) {
   };
 }
 
-function findCustomer(data, { token, email, phone }) {
-  return data.customers.find(
-    (c) =>
-      (token && c.token === token) ||
-      (email && c.email === email) ||
-      (phone && c.phone === phone)
-  );
-}
-
 function requireStaffPin(req, res, next) {
   const pin = req.headers['x-staff-pin'] || (req.body && req.body.pin);
   if (pin !== STAFF_PIN) {
@@ -59,96 +50,96 @@ function requireStaffPin(req, res, next) {
   next();
 }
 
+// Wraps an async route handler so thrown errors/rejections become a 500
+// instead of crashing the process or hanging the request.
+function asyncRoute(handler) {
+  return (req, res) => {
+    handler(req, res).catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: 'Something went wrong on the server.' });
+    });
+  };
+}
+
 // ---------- customer-facing API ----------
 
 // Create a card, or return the existing one for this email/phone (idempotent).
-app.post('/api/signup', (req, res) => {
-  const email = normalizeEmail(req.body.email);
-  const phone = normalizePhone(req.body.phone);
+app.post(
+  '/api/signup',
+  asyncRoute(async (req, res) => {
+    const email = normalizeEmail(req.body.email);
+    const phone = normalizePhone(req.body.phone);
 
-  if (!email && !phone) {
-    return res.status(400).json({ error: 'Enter an email address or phone number.' });
-  }
+    if (!email && !phone) {
+      return res.status(400).json({ error: 'Enter an email address or phone number.' });
+    }
 
-  const data = db.load();
-  let customer = findCustomer(data, { email, phone });
+    let customer = await db.findByContact({ email, phone });
+    if (!customer) {
+      customer = await db.createCustomer({ token: uuidv4(), email, phone });
+    }
 
-  if (!customer) {
-    customer = {
-      token: uuidv4(),
-      email,
-      phone,
-      punches: 0,
-      freeRewards: 0,
-      totalCoffees: 0,
-      createdAt: new Date().toISOString(),
-    };
-    data.customers.push(customer);
-    db.save(data);
-  }
+    res.json(publicCustomer(customer));
+  })
+);
 
-  res.json(publicCustomer(customer));
-});
-
-app.get('/api/customer/:token', (req, res) => {
-  const data = db.load();
-  const customer = data.customers.find((c) => c.token === req.params.token);
-  if (!customer) return res.status(404).json({ error: 'Card not found.' });
-  res.json(publicCustomer(customer));
-});
+app.get(
+  '/api/customer/:token',
+  asyncRoute(async (req, res) => {
+    const customer = await db.findByToken(req.params.token);
+    if (!customer) return res.status(404).json({ error: 'Card not found.' });
+    res.json(publicCustomer(customer));
+  })
+);
 
 // ---------- staff-facing API (requires PIN) ----------
 
-app.post('/api/staff/lookup', requireStaffPin, (req, res) => {
-  const email = normalizeEmail(req.body.contact);
-  const phone = normalizePhone(req.body.contact);
-  const data = db.load();
-  const customer = findCustomer(data, { email, phone });
-  if (!customer) {
-    return res.status(404).json({ error: 'No card found for that email or phone.' });
-  }
-  res.json(publicCustomer(customer));
-});
+app.post(
+  '/api/staff/lookup',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const email = normalizeEmail(req.body.contact);
+    const phone = normalizePhone(req.body.contact);
+    const customer = await db.findByContact({ email, phone });
+    if (!customer) {
+      return res.status(404).json({ error: 'No card found for that email or phone.' });
+    }
+    res.json(publicCustomer(customer));
+  })
+);
 
-app.post('/api/staff/punch', requireStaffPin, (req, res) => {
-  const { token } = req.body;
-  const data = db.load();
-  const customer = data.customers.find((c) => c.token === token);
-  if (!customer) return res.status(404).json({ error: 'Card not found.' });
+app.post(
+  '/api/staff/punch',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const { token } = req.body;
+    const result = await db.addPunch(token, PUNCHES_NEEDED);
+    if (!result) return res.status(404).json({ error: 'Card not found.' });
 
-  customer.totalCoffees += 1;
-  customer.punches += 1;
+    const payload = { ...publicCustomer(result.customer), rewardEarned: result.rewardEarned };
+    io.to(result.customer.token).emit('punch-added', payload);
+    res.json(payload);
+  })
+);
 
-  let rewardEarned = false;
-  if (customer.punches >= PUNCHES_NEEDED) {
-    customer.punches = 0;
-    customer.freeRewards += 1;
-    rewardEarned = true;
-  }
+app.post(
+  '/api/staff/redeem',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const { token } = req.body;
+    const result = await db.redeem(token);
+    if (result.error === 'not_found') {
+      return res.status(404).json({ error: 'Card not found.' });
+    }
+    if (result.error === 'none_available') {
+      return res.status(400).json({ error: 'This customer has no free coffee to redeem.' });
+    }
 
-  db.save(data);
-
-  const payload = { ...publicCustomer(customer), rewardEarned };
-  io.to(customer.token).emit('punch-added', payload);
-  res.json(payload);
-});
-
-app.post('/api/staff/redeem', requireStaffPin, (req, res) => {
-  const { token } = req.body;
-  const data = db.load();
-  const customer = data.customers.find((c) => c.token === token);
-  if (!customer) return res.status(404).json({ error: 'Card not found.' });
-  if (customer.freeRewards <= 0) {
-    return res.status(400).json({ error: 'This customer has no free coffee to redeem.' });
-  }
-
-  customer.freeRewards -= 1;
-  db.save(data);
-
-  const payload = publicCustomer(customer);
-  io.to(customer.token).emit('reward-redeemed', payload);
-  res.json(payload);
-});
+    const payload = publicCustomer(result.customer);
+    io.to(result.customer.token).emit('reward-redeemed', payload);
+    res.json(payload);
+  })
+);
 
 // ---------- realtime ----------
 
@@ -158,7 +149,14 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Coffee punch app listening on port ${PORT}`);
-  console.log(`Staff PIN is ${STAFF_PIN} (set STAFF_PIN env var to change it).`);
-});
+db.init()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`Coffee punch app listening on port ${PORT}`);
+      console.log(`Staff PIN is ${STAFF_PIN} (set STAFF_PIN env var to change it).`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to set up the database:', err);
+    process.exit(1);
+  });
