@@ -1,10 +1,12 @@
 :root {
-  --kraft: #e9d8ae;
-  --kraft-dark: #c9a86a;
-  --ink: #3a2a1a;
-  --brown: #6f4e2c;
-  --brown-dark: #4a3218;
-  --accent: #d0562e;
+  /* St. Pete Running & Coffee palette: vintage cream + oxblood maroon,
+     with the sun-mascot's gold as the pop accent. */
+  --kraft: #f2e6cd;
+  --kraft-dark: #d8bd8e;
+  --ink: #5c1220;
+  --brown: #7c2635;
+  --brown-dark: #5c1220;
+  --accent: #f99d1c;
   --cream: #fbf3e2;
 }
 
@@ -14,7 +16,7 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: linear-gradient(180deg, #2c1a10, #4a3218);
+  background: linear-gradient(180deg, #2a0a10, #5c1220);
   color: var(--ink);
   display: flex;
   align-items: center;
@@ -33,6 +35,15 @@ body {
   margin-bottom: 18px;
 }
 
+.logo-img {
+  display: block;
+  margin: 0 auto 10px;
+  max-width: 130px;
+  max-height: 130px;
+  width: auto;
+  height: auto;
+}
+
 .brand h1 {
   margin: 0 0 4px;
   font-size: 1.6rem;
@@ -40,8 +51,10 @@ body {
 
 .brand p {
   margin: 0;
-  opacity: 0.8;
-  font-size: 0.9rem;
+  opacity: 0.85;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 /* ---------- Signup form ---------- */

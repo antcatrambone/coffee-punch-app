@@ -1,5 +1,5 @@
 (function () {
-  document.getElementById('shopName').textContent = '☕ ' + window.SHOP_CONFIG.name;
+  document.getElementById('shopName').textContent = window.SHOP_CONFIG.name;
   document.getElementById('shopTagline').textContent = window.SHOP_CONFIG.tagline;
 
   const params = new URLSearchParams(window.location.search);

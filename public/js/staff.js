@@ -1,5 +1,5 @@
 (function () {
-  document.getElementById('shopName').textContent = '☕ ' + window.SHOP_CONFIG.name + ' — Staff';
+  document.getElementById('shopName').textContent = window.SHOP_CONFIG.name + ' — Staff';
 
   const pinPanel = document.getElementById('pinPanel');
   const scanPanel = document.getElementById('scanPanel');

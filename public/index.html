@@ -9,7 +9,8 @@
 <body>
   <div class="wrap">
     <div class="brand">
-      <h1 id="shopName">☕ Coffee Punch Card</h1>
+      <img id="logoImg" class="logo-img" src="img/logo.png" alt="" onerror="this.style.display='none'" />
+      <h1 id="shopName">Coffee Punch Card</h1>
       <p id="shopTagline">Buy 10, get the 11th free</p>
     </div>
 
@@ -31,7 +32,7 @@
 
   <script src="js/config.js"></script>
   <script>
-    document.getElementById('shopName').textContent = '☕ ' + window.SHOP_CONFIG.name;
+    document.getElementById('shopName').textContent = window.SHOP_CONFIG.name;
     document.getElementById('shopTagline').textContent = window.SHOP_CONFIG.tagline;
 
     const emailInput = document.getElementById('email');
