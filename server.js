@@ -29,11 +29,25 @@ function normalizePhone(phone) {
   return digits || null;
 }
 
+function normalizeName(name) {
+  const n = (name || '').trim();
+  return n || null;
+}
+
+// Expects the value an <input type="date"> sends: "YYYY-MM-DD", or empty.
+function normalizeBirthday(birthday) {
+  const b = (birthday || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(b) ? b : null;
+}
+
 function publicCustomer(c) {
   return {
     token: c.token,
     email: c.email,
     phone: c.phone,
+    firstName: c.firstName,
+    lastName: c.lastName,
+    birthday: c.birthday,
     punches: c.punches,
     punchesNeeded: PUNCHES_NEEDED,
     freeRewards: c.freeRewards,
@@ -69,6 +83,9 @@ app.post(
   asyncRoute(async (req, res) => {
     const email = normalizeEmail(req.body.email);
     const phone = normalizePhone(req.body.phone);
+    const firstName = normalizeName(req.body.firstName);
+    const lastName = normalizeName(req.body.lastName);
+    const birthday = normalizeBirthday(req.body.birthday);
 
     if (!email && !phone) {
       return res.status(400).json({ error: 'Enter an email address or phone number.' });
@@ -76,7 +93,7 @@ app.post(
 
     let customer = await db.findByContact({ email, phone });
     if (!customer) {
-      customer = await db.createCustomer({ token: uuidv4(), email, phone });
+      customer = await db.createCustomer({ token: uuidv4(), email, phone, firstName, lastName, birthday });
     }
 
     res.json(publicCustomer(customer));
@@ -88,7 +105,9 @@ app.get(
   asyncRoute(async (req, res) => {
     const customer = await db.findByToken(req.params.token);
     if (!customer) return res.status(404).json({ error: 'Card not found.' });
-    res.json(publicCustomer(customer));
+
+    const { customer: updated, birthdayGranted } = await db.maybeGrantBirthday(customer);
+    res.json({ ...publicCustomer(updated), birthdayGranted });
   })
 );
 
@@ -104,7 +123,9 @@ app.post(
     if (!customer) {
       return res.status(404).json({ error: 'No card found for that email or phone.' });
     }
-    res.json(publicCustomer(customer));
+
+    const { customer: updated, birthdayGranted } = await db.maybeGrantBirthday(customer);
+    res.json({ ...publicCustomer(updated), birthdayGranted });
   })
 );
 

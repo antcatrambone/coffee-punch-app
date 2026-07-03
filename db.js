@@ -10,6 +10,10 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
+// Shop is in St. Petersburg, FL — birthdays are checked against this
+// timezone rather than whatever timezone the server happens to run in.
+const SHOP_TIMEZONE = 'America/New_York';
+
 async function init() {
   await pool.query(`
     create table if not exists customers (
@@ -22,6 +26,24 @@ async function init() {
       created_at timestamptz not null default now()
     );
   `);
+
+  // Safe to run every time the server starts — adds these columns if this
+  // table already existed from before names/birthdays were tracked.
+  await pool.query(`alter table customers add column if not exists first_name text;`);
+  await pool.query(`alter table customers add column if not exists last_name text;`);
+  await pool.query(`alter table customers add column if not exists birthday date;`);
+  await pool.query(`alter table customers add column if not exists birthday_reward_year integer;`);
+
+  // One row per signup/punch/reward/redemption, so you can run retention
+  // and frequency analysis in Supabase's SQL editor later.
+  await pool.query(`
+    create table if not exists events (
+      id bigserial primary key,
+      customer_token uuid not null references customers(token) on delete cascade,
+      event_type text not null,
+      created_at timestamptz not null default now()
+    );
+  `);
 }
 
 function rowToCustomer(row) {
@@ -30,11 +52,22 @@ function rowToCustomer(row) {
     token: row.token,
     email: row.email,
     phone: row.phone,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    birthday: row.birthday,
+    birthdayRewardYear: row.birthday_reward_year,
     punches: row.punches,
     freeRewards: row.free_rewards,
     totalCoffees: row.total_coffees,
     createdAt: row.created_at,
   };
+}
+
+async function logEvent(token, eventType) {
+  await pool.query(
+    `insert into events (customer_token, event_type) values ($1, $2)`,
+    [token, eventType]
+  );
 }
 
 async function findByToken(token) {
@@ -54,11 +87,13 @@ async function findByContact({ email, phone }) {
   return rowToCustomer(rows[0]);
 }
 
-async function createCustomer({ token, email, phone }) {
+async function createCustomer({ token, email, phone, firstName, lastName, birthday }) {
   const { rows } = await pool.query(
-    `insert into customers (token, email, phone) values ($1, $2, $3) returning *`,
-    [token, email || null, phone || null]
+    `insert into customers (token, email, phone, first_name, last_name, birthday)
+     values ($1, $2, $3, $4, $5, $6) returning *`,
+    [token, email || null, phone || null, firstName || null, lastName || null, birthday || null]
   );
+  await logEvent(token, 'signup');
   return rowToCustomer(rows[0]);
 }
 
@@ -85,6 +120,10 @@ async function addPunch(token, punchesNeeded) {
      returning *`,
     [punches, freeRewards, token]
   );
+
+  await logEvent(token, 'punch');
+  if (rewardEarned) await logEvent(token, 'reward_earned');
+
   return { customer: rowToCustomer(rows[0]), rewardEarned };
 }
 
@@ -99,7 +138,60 @@ async function redeem(token) {
     `update customers set free_rewards = free_rewards - 1 where token = $1 returning *`,
     [token]
   );
+
+  await logEvent(token, 'redeem');
   return { customer: rowToCustomer(rows[0]) };
 }
 
-module.exports = { init, findByToken, findByContact, createCustomer, addPunch, redeem };
+// Today's date in the shop's timezone, regardless of what timezone the
+// server itself happens to run in.
+function shopToday() {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SHOP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map((p) => [p.type, p.value]));
+  return { year: parseInt(parts.year, 10), month: parseInt(parts.month, 10), day: parseInt(parts.day, 10) };
+}
+
+// If today is the customer's birthday (in the shop's timezone) and they
+// haven't already received this year's birthday coffee, grants one and
+// logs it. Safe to call every time a customer's card is loaded — it's a
+// no-op on every day that isn't their birthday, and only fires once per
+// year even if they open the app multiple times that day.
+async function maybeGrantBirthday(customer) {
+  if (!customer || !customer.birthday) {
+    return { customer, birthdayGranted: false };
+  }
+
+  const bday = new Date(customer.birthday);
+  const today = shopToday();
+  const isBirthdayToday = bday.getUTCMonth() + 1 === today.month && bday.getUTCDate() === today.day;
+
+  if (!isBirthdayToday || customer.birthdayRewardYear === today.year) {
+    return { customer, birthdayGranted: false };
+  }
+
+  const { rows } = await pool.query(
+    `update customers
+     set free_rewards = free_rewards + 1, birthday_reward_year = $1
+     where token = $2
+     returning *`,
+    [today.year, customer.token]
+  );
+
+  await logEvent(customer.token, 'birthday_reward');
+  return { customer: rowToCustomer(rows[0]), birthdayGranted: true };
+}
+
+module.exports = {
+  init,
+  findByToken,
+  findByContact,
+  createCustomer,
+  addPunch,
+  redeem,
+  maybeGrantBirthday,
+};
