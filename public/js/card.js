@@ -16,6 +16,7 @@
   const statusLine = document.getElementById('statusLine');
   const rewardBanner = document.getElementById('rewardBanner');
   const contactLine = document.getElementById('contactLine');
+  const lifetimeLine = document.getElementById('lifetimeLine');
   const switchLink = document.getElementById('switchLink');
 
   switchLink.addEventListener('click', () => {
@@ -64,6 +65,15 @@
     const name = [c.firstName, c.lastName].filter(Boolean).join(' ');
     const contact = c.email || c.phone || '';
     contactLine.textContent = name ? `${name} · ${contact}` : contact;
+  }
+
+  function renderLifetime(c) {
+    const n = c.totalCoffees || 0;
+    if (n <= 0) {
+      lifetimeLine.textContent = '';
+      return;
+    }
+    lifetimeLine.textContent = `You've earned ${n} coffee${n === 1 ? '' : 's'} with us!`;
   }
 
   function renderStatus(c) {
@@ -130,6 +140,7 @@
     updateSlots(state.punches);
     renderStatus(state);
     renderContact(state);
+    renderLifetime(state);
     renderQR();
 
     if (state.birthdayGranted) {
@@ -154,6 +165,7 @@
       state = payload;
       setTimeout(() => {
         renderStatus(state);
+        renderLifetime(state);
         if (wasRewardRun) {
           updateSlots(0);
           celebrateReward();
