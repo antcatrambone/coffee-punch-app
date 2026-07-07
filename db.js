@@ -44,6 +44,28 @@ async function init() {
       created_at timestamptz not null default now()
     );
   `);
+
+  // Infrastructure for future multi-tier rewards (e.g. free merch at 20
+  // punches, in addition to a free coffee at 10). The app doesn't act on
+  // this table yet — punches still only check the single PUNCHES_NEEDED
+  // threshold from server.js — but the reward structure already lives in
+  // the database instead of being hardcoded, so extending it later is a
+  // data change, not a schema change. `total_coffees` on customers never
+  // resets, so it's already the right lifetime counter to check multiple
+  // thresholds against once that logic is built.
+  await pool.query(`
+    create table if not exists reward_tiers (
+      id serial primary key,
+      threshold integer not null unique,
+      name text not null,
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    insert into reward_tiers (threshold, name)
+    values (10, 'Free Coffee')
+    on conflict (threshold) do nothing;
+  `);
 }
 
 function rowToCustomer(row) {
@@ -186,6 +208,22 @@ async function maybeGrantBirthday(customer) {
   return { customer: rowToCustomer(rows[0]), birthdayGranted: true };
 }
 
+// Shop-wide totals for the live stats page.
+async function getStats() {
+  const [punches, customers, redeemed, outstanding] = await Promise.all([
+    pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers`),
+    pool.query(`select count(*)::int as n from customers`),
+    pool.query(`select count(*)::int as n from events where event_type = 'redeem'`),
+    pool.query(`select coalesce(sum(free_rewards), 0)::int as n from customers`),
+  ]);
+  return {
+    totalPunches: punches.rows[0].n,
+    totalCustomers: customers.rows[0].n,
+    totalRedeemed: redeemed.rows[0].n,
+    outstandingRewards: outstanding.rows[0].n,
+  };
+}
+
 module.exports = {
   init,
   findByToken,
@@ -194,4 +232,5 @@ module.exports = {
   addPunch,
   redeem,
   maybeGrantBirthday,
+  getStats,
 };

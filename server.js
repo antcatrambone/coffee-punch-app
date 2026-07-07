@@ -75,6 +75,17 @@ function asyncRoute(handler) {
   };
 }
 
+// Recomputes shop-wide totals and pushes them to every connected stats
+// page. Called after anything that changes punches/rewards/signups.
+async function broadcastStats() {
+  try {
+    const stats = await db.getStats();
+    io.emit('stats-updated', stats);
+  } catch (err) {
+    console.error('Failed to broadcast stats:', err);
+  }
+}
+
 // ---------- customer-facing API ----------
 
 // Create a card, or return the existing one for this email/phone (idempotent).
@@ -92,10 +103,13 @@ app.post(
     }
 
     let customer = await db.findByContact({ email, phone });
+    let isNew = false;
     if (!customer) {
       customer = await db.createCustomer({ token: uuidv4(), email, phone, firstName, lastName, birthday });
+      isNew = true;
     }
 
+    if (isNew) broadcastStats();
     res.json(publicCustomer(customer));
   })
 );
@@ -107,11 +121,21 @@ app.get(
     if (!customer) return res.status(404).json({ error: 'Card not found.' });
 
     const { customer: updated, birthdayGranted } = await db.maybeGrantBirthday(customer);
+    if (birthdayGranted) broadcastStats();
     res.json({ ...publicCustomer(updated), birthdayGranted });
   })
 );
 
 // ---------- staff-facing API (requires PIN) ----------
+
+app.get(
+  '/api/stats',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const stats = await db.getStats();
+    res.json(stats);
+  })
+);
 
 app.post(
   '/api/staff/lookup',
@@ -125,6 +149,7 @@ app.post(
     }
 
     const { customer: updated, birthdayGranted } = await db.maybeGrantBirthday(customer);
+    if (birthdayGranted) broadcastStats();
     res.json({ ...publicCustomer(updated), birthdayGranted });
   })
 );
@@ -139,6 +164,7 @@ app.post(
 
     const payload = { ...publicCustomer(result.customer), rewardEarned: result.rewardEarned };
     io.to(result.customer.token).emit('punch-added', payload);
+    broadcastStats();
     res.json(payload);
   })
 );
@@ -158,6 +184,7 @@ app.post(
 
     const payload = publicCustomer(result.customer);
     io.to(result.customer.token).emit('reward-redeemed', payload);
+    broadcastStats();
     res.json(payload);
   })
 );
