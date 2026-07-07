@@ -235,6 +235,16 @@ body {
   75% { transform: translate(-1px, 1px) rotate(-0.2deg); }
 }
 
+.lifetime-line {
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--brown-dark);
+  margin-top: 10px;
+  min-height: 1.2em;
+}
+
 .reward-banner {
   margin-top: 16px;
   padding: 12px 14px;
@@ -366,4 +376,42 @@ body {
   font-weight: 700;
   min-height: 1.2em;
   margin-top: 12px;
+}
+
+/* ---------- Stats page ---------- */
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.stat-tile {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 22px 14px;
+  text-align: center;
+  border: 1px solid rgba(92, 18, 32, 0.08);
+  box-shadow: 0 10px 24px rgba(92, 18, 32, 0.1);
+}
+
+.stat-number {
+  font-family: var(--font-display);
+  font-size: 2.4rem;
+  font-weight: 700;
+  color: var(--brown-dark);
+  line-height: 1;
+}
+
+.stat-number.pop {
+  animation: slotPop 0.5s ease;
+}
+
+.stat-label {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--brown);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
