@@ -14,7 +14,7 @@
     <div class="brand">
       <img id="logoImg" class="logo-img" src="logo.webp" alt="" onerror="this.style.display='none'" />
       <h1 id="shopName">Coffee Punch Card</h1>
-      <p id="shopTagline">Buy 10, get the 11th free</p>
+      <p id="shopTagline">Buy 5, get the 6th free</p>
     </div>
 
     <div class="panel">
@@ -35,6 +35,11 @@
       <label for="birthday">Birthday <span style="font-weight:400;">(get a free coffee that day!)</span></label>
       <input id="birthday" type="date" autocomplete="bday" />
 
+      <label class="checkbox-row" for="marketingOptIn">
+        <input type="checkbox" id="marketingOptIn" />
+        <span>Yes, send me occasional emails or texts about new flavors, rewards, and promotions.</span>
+      </label>
+
       <button id="submitBtn">Get my punch card</button>
       <div class="error" id="errorMsg"></div>
     </div>
@@ -53,6 +58,7 @@
     const emailInput = document.getElementById('email');
     const phoneInput = document.getElementById('phone');
     const birthdayInput = document.getElementById('birthday');
+    const marketingOptInInput = document.getElementById('marketingOptIn');
     const errorMsg = document.getElementById('errorMsg');
     const submitBtn = document.getElementById('submitBtn');
 
@@ -69,6 +75,7 @@
       const email = emailInput.value.trim();
       const phone = phoneInput.value.trim();
       const birthday = birthdayInput.value;
+      const marketingOptIn = marketingOptInInput.checked;
 
       if (!email && !phone) {
         errorMsg.textContent = 'Enter an email address or phone number.';
@@ -82,7 +89,7 @@
         const res = await fetch('/api/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ firstName, lastName, email, phone, birthday }),
+          body: JSON.stringify({ firstName, lastName, email, phone, birthday, marketingOptIn }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Something went wrong.');
