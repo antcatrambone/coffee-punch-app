@@ -34,6 +34,13 @@ async function init() {
   await pool.query(`alter table customers add column if not exists birthday date;`);
   await pool.query(`alter table customers add column if not exists birthday_reward_year integer;`);
 
+  // Marketing consent — not acted on by any code yet (no emails/texts are
+  // actually sent). This just captures the opt-in itself, with a
+  // timestamp, so there's a clean consent record ready for whenever
+  // email/SMS campaigns are turned on.
+  await pool.query(`alter table customers add column if not exists marketing_opt_in boolean not null default false;`);
+  await pool.query(`alter table customers add column if not exists marketing_opt_in_at timestamptz;`);
+
   // One row per signup/punch/reward/redemption, so you can run retention
   // and frequency analysis in Supabase's SQL editor later.
   await pool.query(`
@@ -46,7 +53,7 @@ async function init() {
   `);
 
   // Infrastructure for future multi-tier rewards (e.g. free merch at 20
-  // punches, in addition to a free coffee at 10). The app doesn't act on
+  // punches, in addition to a free coffee at 5). The app doesn't act on
   // this table yet — punches still only check the single PUNCHES_NEEDED
   // threshold from server.js — but the reward structure already lives in
   // the database instead of being hardcoded, so extending it later is a
@@ -63,7 +70,7 @@ async function init() {
   `);
   await pool.query(`
     insert into reward_tiers (threshold, name)
-    values (10, 'Free Coffee')
+    values (5, 'Free Coffee')
     on conflict (threshold) do nothing;
   `);
 }
@@ -78,6 +85,8 @@ function rowToCustomer(row) {
     lastName: row.last_name,
     birthday: row.birthday,
     birthdayRewardYear: row.birthday_reward_year,
+    marketingOptIn: row.marketing_opt_in,
+    marketingOptInAt: row.marketing_opt_in_at,
     punches: row.punches,
     freeRewards: row.free_rewards,
     totalCoffees: row.total_coffees,
@@ -109,13 +118,24 @@ async function findByContact({ email, phone }) {
   return rowToCustomer(rows[0]);
 }
 
-async function createCustomer({ token, email, phone, firstName, lastName, birthday }) {
+async function createCustomer({ token, email, phone, firstName, lastName, birthday, marketingOptIn }) {
+  const optIn = !!marketingOptIn;
   const { rows } = await pool.query(
-    `insert into customers (token, email, phone, first_name, last_name, birthday)
-     values ($1, $2, $3, $4, $5, $6) returning *`,
-    [token, email || null, phone || null, firstName || null, lastName || null, birthday || null]
+    `insert into customers (token, email, phone, first_name, last_name, birthday, marketing_opt_in, marketing_opt_in_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+    [
+      token,
+      email || null,
+      phone || null,
+      firstName || null,
+      lastName || null,
+      birthday || null,
+      optIn,
+      optIn ? new Date() : null,
+    ]
   );
   await logEvent(token, 'signup');
+  if (optIn) await logEvent(token, 'marketing_opt_in');
   return rowToCustomer(rows[0]);
 }
 
@@ -224,6 +244,94 @@ async function getStats() {
   };
 }
 
+// ---------- dashboard: punch trends + repeat customers ----------
+
+function isoDay(d) { return d.toISOString().slice(0, 10); }
+function isoMonth(d) { return d.toISOString().slice(0, 7); }
+
+// Monday-based week start, matching Postgres's date_trunc('week', ...).
+function weekStart(d) {
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = date.getUTCDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  date.setUTCDate(date.getUTCDate() + diff);
+  return date;
+}
+
+// Turns sparse "bucket -> count" rows into a fixed-length, zero-filled
+// array covering the last N days/weeks/months, so gaps in activity show
+// up as 0 in the chart instead of just being skipped.
+function fillDaily(rows, days) {
+  const map = new Map(rows.map((r) => [isoDay(new Date(r.bucket)), r.punches]));
+  const out = [];
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = isoDay(d);
+    out.push({ bucket: key, punches: map.get(key) || 0 });
+  }
+  return out;
+}
+
+function fillWeekly(rows, weeks) {
+  const map = new Map(rows.map((r) => [isoDay(new Date(r.bucket)), r.punches]));
+  const out = [];
+  const thisWeek = weekStart(new Date());
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(thisWeek);
+    d.setUTCDate(d.getUTCDate() - i * 7);
+    const key = isoDay(d);
+    out.push({ bucket: key, punches: map.get(key) || 0 });
+  }
+  return out;
+}
+
+function fillMonthly(rows, months) {
+  const map = new Map(rows.map((r) => [isoMonth(new Date(r.bucket)), r.punches]));
+  const out = [];
+  const now = new Date();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const key = isoMonth(d);
+    out.push({ bucket: key, punches: map.get(key) || 0 });
+  }
+  return out;
+}
+
+// Day-over-day (30d), week-over-week (12wk), and month-over-month (12mo)
+// punch counts, plus how many customers have ever come back for a second
+// coffee (total_coffees >= 2 — total_coffees is a lifetime counter that
+// never resets, even across free-reward rollovers).
+async function getDashboardStats() {
+  const [dailyRaw, weeklyRaw, monthlyRaw, repeat] = await Promise.all([
+    pool.query(
+      `select date_trunc('day', created_at) as bucket, count(*)::int as punches
+       from events where event_type = 'punch' and created_at >= now() - interval '30 days'
+       group by bucket order by bucket`
+    ),
+    pool.query(
+      `select date_trunc('week', created_at) as bucket, count(*)::int as punches
+       from events where event_type = 'punch' and created_at >= now() - interval '84 days'
+       group by bucket order by bucket`
+    ),
+    pool.query(
+      `select date_trunc('month', created_at) as bucket, count(*)::int as punches
+       from events where event_type = 'punch' and created_at >= now() - interval '365 days'
+       group by bucket order by bucket`
+    ),
+    pool.query(`select count(*)::int as n from customers where total_coffees >= 2`),
+  ]);
+
+  return {
+    daily: fillDaily(dailyRaw.rows, 30),
+    weekly: fillWeekly(weeklyRaw.rows, 12),
+    monthly: fillMonthly(monthlyRaw.rows, 12),
+    repeatCustomers: repeat.rows[0].n,
+  };
+}
+
 module.exports = {
   init,
   findByToken,
@@ -233,4 +341,5 @@ module.exports = {
   redeem,
   maybeGrantBirthday,
   getStats,
+  getDashboardStats,
 };
