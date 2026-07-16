@@ -89,7 +89,7 @@
       lifetimeLine.textContent = '';
       return;
     }
-    lifetimeLine.textContent = `You've earned ${n} coffee${n === 1 ? '' : 's'} with us!`;
+    lifetimeLine.textContent = `You've received ${n} punch${n === 1 ? '' : 'es'} with us!`;
   }
 
   function renderStatus(c) {
