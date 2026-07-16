@@ -12,6 +12,7 @@
   localStorage.setItem('punchCardToken', token);
 
   const cardEl = document.getElementById('card');
+  const cardTitle = document.getElementById('cardTitle');
   const grid = document.getElementById('punchGrid');
   const statusLine = document.getElementById('statusLine');
   const rewardBanner = document.getElementById('rewardBanner');
@@ -24,9 +25,18 @@
     window.location.href = 'index.html';
   });
 
-  // iOS/Safari require a user gesture before audio can play — unlock on first tap.
-  document.body.addEventListener('click', () => window.PunchSounds.unlock(), { once: true });
-  document.body.addEventListener('touchstart', () => window.PunchSounds.unlock(), { once: true });
+  // Browsers only allow audio to play after some interaction with the page.
+  // We never ask for one explicitly — instead we listen broadly so almost
+  // any incidental touch (adjusting the phone, scrolling, the screen
+  // simply being tapped to wake it) silently unlocks sound in the
+  // background. If none of these ever fire, sound just won't play on that
+  // visit — the punch animation and confetti work regardless.
+  const unlockEvents = ['pointerdown', 'touchstart', 'touchend', 'mousedown', 'click', 'keydown', 'scroll'];
+  function unlockOnce() {
+    window.PunchSounds.unlock();
+    unlockEvents.forEach((evt) => document.removeEventListener(evt, unlockOnce));
+  }
+  unlockEvents.forEach((evt) => document.addEventListener(evt, unlockOnce, { passive: true }));
 
   let state = null;
   let qr = null;
@@ -59,6 +69,12 @@
       colorDark: '#4a3218',
       colorLight: '#ffffff',
     });
+  }
+
+  function renderCardTitle(c) {
+    const title = c.firstName ? `${c.firstName}'s Punch Card` : 'My Punch Card';
+    cardTitle.textContent = title;
+    document.title = title;
   }
 
   function renderContact(c) {
@@ -136,6 +152,7 @@
       return;
     }
     state = await res.json();
+    renderCardTitle(state);
     renderGrid(state.punchesNeeded);
     updateSlots(state.punches);
     renderStatus(state);
