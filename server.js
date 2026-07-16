@@ -6,7 +6,7 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./db');
 
-const PUNCHES_NEEDED = parseInt(process.env.PUNCHES_NEEDED || '10', 10);
+const PUNCHES_NEEDED = parseInt(process.env.PUNCHES_NEEDED || '5', 10);
 const STAFF_PIN = process.env.STAFF_PIN || '1234';
 const PORT = process.env.PORT || 3000;
 
@@ -48,6 +48,7 @@ function publicCustomer(c) {
     firstName: c.firstName,
     lastName: c.lastName,
     birthday: c.birthday,
+    marketingOptIn: c.marketingOptIn,
     punches: c.punches,
     punchesNeeded: PUNCHES_NEEDED,
     freeRewards: c.freeRewards,
@@ -97,6 +98,7 @@ app.post(
     const firstName = normalizeName(req.body.firstName);
     const lastName = normalizeName(req.body.lastName);
     const birthday = normalizeBirthday(req.body.birthday);
+    const marketingOptIn = req.body.marketingOptIn === true;
 
     if (!email && !phone) {
       return res.status(400).json({ error: 'Enter an email address or phone number.' });
@@ -105,7 +107,7 @@ app.post(
     let customer = await db.findByContact({ email, phone });
     let isNew = false;
     if (!customer) {
-      customer = await db.createCustomer({ token: uuidv4(), email, phone, firstName, lastName, birthday });
+      customer = await db.createCustomer({ token: uuidv4(), email, phone, firstName, lastName, birthday, marketingOptIn });
       isNew = true;
     }
 
@@ -134,6 +136,15 @@ app.get(
   asyncRoute(async (req, res) => {
     const stats = await db.getStats();
     res.json(stats);
+  })
+);
+
+app.get(
+  '/api/staff/dashboard',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const dashboard = await db.getDashboardStats();
+    res.json(dashboard);
   })
 );
 
