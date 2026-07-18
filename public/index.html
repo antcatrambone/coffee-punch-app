@@ -32,8 +32,11 @@
       <label for="phone">Phone number</label>
       <input id="phone" type="tel" placeholder="(555) 123-4567" autocomplete="tel" />
 
-      <label for="birthday">Birthday <span style="font-weight:400;">(get a free coffee that day!)</span></label>
-      <input id="birthday" type="date" autocomplete="bday" />
+      <label for="birthdayMonth">Birthday <span style="font-weight:400;">(get a free coffee that day!)</span></label>
+      <div class="birthday-row">
+        <select id="birthdayMonth" aria-label="Birthday month"></select>
+        <select id="birthdayDay" aria-label="Birthday day"></select>
+      </div>
 
       <label class="checkbox-row" for="marketingOptIn">
         <input type="checkbox" id="marketingOptIn" />
@@ -57,10 +60,64 @@
     const lastNameInput = document.getElementById('lastName');
     const emailInput = document.getElementById('email');
     const phoneInput = document.getElementById('phone');
-    const birthdayInput = document.getElementById('birthday');
+    const birthdayMonthInput = document.getElementById('birthdayMonth');
+    const birthdayDayInput = document.getElementById('birthdayDay');
     const marketingOptInInput = document.getElementById('marketingOptIn');
     const errorMsg = document.getElementById('errorMsg');
     const submitBtn = document.getElementById('submitBtn');
+
+    // We only ever need month + day (the reward check ignores birth year
+    // entirely), so there's no calendar widget and no year to get wrong.
+    const MONTH_NAMES = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    // A fixed, always-past leap year used only so "Feb 29" is a valid
+    // date to construct — it's never shown to the customer or read back.
+    const PLACEHOLDER_YEAR = 2000;
+
+    function daysInMonth(month) {
+      return new Date(PLACEHOLDER_YEAR, month, 0).getDate();
+    }
+
+    function populateMonths() {
+      birthdayMonthInput.innerHTML = '<option value="">Month</option>';
+      MONTH_NAMES.forEach((name, i) => {
+        const opt = document.createElement('option');
+        opt.value = String(i + 1);
+        opt.textContent = name;
+        birthdayMonthInput.appendChild(opt);
+      });
+    }
+
+    function populateDays() {
+      const prevSelection = birthdayDayInput.value;
+      const month = parseInt(birthdayMonthInput.value, 10);
+      const max = month ? daysInMonth(month) : 31;
+      birthdayDayInput.innerHTML = '<option value="">Day</option>';
+      for (let d = 1; d <= max; d++) {
+        const opt = document.createElement('option');
+        opt.value = String(d);
+        opt.textContent = String(d);
+        birthdayDayInput.appendChild(opt);
+      }
+      // Keep the day selected if it's still valid for the new month
+      // (e.g. switching off Feb shouldn't silently clear day 29).
+      if (prevSelection && parseInt(prevSelection, 10) <= max) {
+        birthdayDayInput.value = prevSelection;
+      }
+    }
+
+    populateMonths();
+    populateDays();
+    birthdayMonthInput.addEventListener('change', populateDays);
+
+    function getBirthdayValue() {
+      const month = birthdayMonthInput.value;
+      const day = birthdayDayInput.value;
+      if (!month || !day) return '';
+      return `${PLACEHOLDER_YEAR}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
 
     // Auto-load a card already created on this device.
     const savedToken = localStorage.getItem('punchCardToken');
@@ -74,7 +131,7 @@
       const lastName = lastNameInput.value.trim();
       const email = emailInput.value.trim();
       const phone = phoneInput.value.trim();
-      const birthday = birthdayInput.value;
+      const birthday = getBirthdayValue();
       const marketingOptIn = marketingOptInInput.checked;
 
       if (!email && !phone) {
