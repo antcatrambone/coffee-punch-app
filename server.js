@@ -34,10 +34,31 @@ function normalizeName(name) {
   return n || null;
 }
 
-// Expects the value an <input type="date"> sends: "YYYY-MM-DD", or empty.
+// The signup form only collects month + day (a fixed placeholder year is
+// used to build this string client-side, since the birthday reward check
+// below ignores year entirely). We re-validate and re-build it here too,
+// rather than trusting the client's year, so a direct API call can't ever
+// store a bogus or future-dated birthday.
+const BIRTHDAY_PLACEHOLDER_YEAR = 2000;
+
 function normalizeBirthday(birthday) {
   const b = (birthday || '').trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(b) ? b : null;
+  const match = /^\d{4}-(\d{2})-(\d{2})$/.exec(b);
+  if (!match) return null;
+
+  const month = parseInt(match[1], 10);
+  const day = parseInt(match[2], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+  // Round-trip through Date to catch invalid combinations like Feb 30 —
+  // the UTC constructor silently rolls those into the next month instead
+  // of throwing, so we compare the parts back out.
+  const check = new Date(Date.UTC(BIRTHDAY_PLACEHOLDER_YEAR, month - 1, day));
+  if (check.getUTCMonth() + 1 !== month || check.getUTCDate() !== day) return null;
+
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${BIRTHDAY_PLACEHOLDER_YEAR}-${mm}-${dd}`;
 }
 
 function publicCustomer(c) {
