@@ -92,6 +92,45 @@ body {
   background: #fff;
 }
 
+.birthday-row {
+  display: flex;
+  gap: 10px;
+}
+
+.birthday-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 10px;
+  border: 2px solid var(--kraft-dark);
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  background: #fff;
+  color: var(--ink);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px 0 4px;
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin-top: 3px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.checkbox-row span {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--brown);
+  line-height: 1.35;
+}
+
 .panel button {
   width: 100%;
   margin-top: 20px;
@@ -414,4 +453,98 @@ body {
   color: var(--brown);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+/* ---------- Dashboard page ---------- */
+
+.wrap.wide {
+  max-width: 520px;
+}
+
+.tab-row {
+  display: flex;
+  gap: 8px;
+  margin: 20px 0 4px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px;
+  border: 2px solid var(--kraft-dark);
+  background: #fff;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--brown);
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: var(--brown-dark);
+  border-color: var(--brown-dark);
+  color: #fff;
+}
+
+.chart-panel {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 18px 16px 12px;
+  border: 1px solid rgba(92, 18, 32, 0.08);
+  box-shadow: 0 10px 24px rgba(92, 18, 32, 0.1);
+}
+
+.chart-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--brown);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 10px;
+}
+
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 130px;
+}
+
+.bar-chart .bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  cursor: default;
+}
+
+.bar-chart .bar {
+  width: 100%;
+  max-width: 22px;
+  min-height: 3px;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+  transition: background 0.15s ease;
+}
+
+.bar-chart .bar-col:hover .bar {
+  background: var(--brown-dark);
+}
+
+.bar-chart .bar-label {
+  margin-top: 6px;
+  font-size: 0.6rem;
+  color: var(--brown);
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.chart-empty {
+  text-align: center;
+  color: var(--brown);
+  opacity: 0.6;
+  font-size: 0.85rem;
+  padding: 30px 0;
 }
