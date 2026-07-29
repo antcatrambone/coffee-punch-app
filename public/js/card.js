@@ -67,7 +67,9 @@
       width: 160,
       height: 160,
       colorDark: '#4a3218',
-      colorLight: '#ffffff',
+      // Transparent instead of white, so the QR sits directly on the page
+      // background instead of inside a white box.
+      colorLight: 'rgba(255, 255, 255, 0)',
     });
   }
 
