@@ -41,6 +41,11 @@ async function init() {
   await pool.query(`alter table customers add column if not exists marketing_opt_in boolean not null default false;`);
   await pool.query(`alter table customers add column if not exists marketing_opt_in_at timestamptz;`);
 
+  // Lifetime count of redeemed free rewards — distinct from free_rewards,
+  // which is how many they currently have *available* to redeem right now.
+  // This one only ever goes up.
+  await pool.query(`alter table customers add column if not exists redeemed_rewards integer not null default 0;`);
+
   // One row per signup/punch/reward/redemption, so you can run retention
   // and frequency analysis in Supabase's SQL editor later.
   await pool.query(`
@@ -51,6 +56,22 @@ async function init() {
       created_at timestamptz not null default now()
     );
   `);
+
+  // Not backfilling on purpose: redeemed_rewards starts at 0 for every
+  // existing customer and only counts redemptions from here forward. If
+  // you change your mind later, the historical numbers are still sitting
+  // in the events table (event_type = 'redeem') and can be backfilled
+  // any time with:
+  //
+  //   update customers
+  //   set redeemed_rewards = sub.cnt
+  //   from (
+  //     select customer_token, count(*)::int as cnt
+  //     from events
+  //     where event_type = 'redeem'
+  //     group by customer_token
+  //   ) sub
+  //   where customers.token = sub.customer_token;
 
   // Infrastructure for future multi-tier rewards (e.g. free merch at 20
   // punches, in addition to a free coffee at 5). The app doesn't act on
@@ -89,6 +110,7 @@ function rowToCustomer(row) {
     marketingOptInAt: row.marketing_opt_in_at,
     punches: row.punches,
     freeRewards: row.free_rewards,
+    redeemedRewards: row.redeemed_rewards,
     totalCoffees: row.total_coffees,
     createdAt: row.created_at,
   };
@@ -177,7 +199,10 @@ async function redeem(token) {
   if (customer.freeRewards <= 0) return { error: 'none_available' };
 
   const { rows } = await pool.query(
-    `update customers set free_rewards = free_rewards - 1 where token = $1 returning *`,
+    `update customers
+     set free_rewards = free_rewards - 1, redeemed_rewards = redeemed_rewards + 1
+     where token = $1
+     returning *`,
     [token]
   );
 
