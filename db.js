@@ -46,6 +46,13 @@ async function init() {
   // This one only ever goes up.
   await pool.query(`alter table customers add column if not exists redeemed_rewards integer not null default 0;`);
 
+  // Marks dev/QA signups (test cards created while building or testing the
+  // app) so they can be excluded from every stats/dashboard query without
+  // ever deleting the underlying rows. Defaults to false for real
+  // customers; flip it with setTestFlag() for anything that isn't a real
+  // customer, present or future.
+  await pool.query(`alter table customers add column if not exists is_test boolean not null default false;`);
+
   // One row per signup/punch/reward/redemption, so you can run retention
   // and frequency analysis in Supabase's SQL editor later.
   await pool.query(`
@@ -112,6 +119,7 @@ function rowToCustomer(row) {
     freeRewards: row.free_rewards,
     redeemedRewards: row.redeemed_rewards,
     totalCoffees: row.total_coffees,
+    isTest: row.is_test,
     createdAt: row.created_at,
   };
 }
@@ -210,6 +218,18 @@ async function redeem(token) {
   return { customer: rowToCustomer(rows[0]) };
 }
 
+// Marks (or unmarks) a customer as a test/dev account. Test accounts stay
+// in the table — full history intact, nothing deleted — they're just
+// excluded from getStats() and getDashboardStats() below. Returns the
+// updated customer, or null if the token doesn't exist.
+async function setTestFlag(token, isTest) {
+  const { rows } = await pool.query(
+    `update customers set is_test = $1 where token = $2 returning *`,
+    [!!isTest, token]
+  );
+  return rowToCustomer(rows[0]);
+}
+
 // Today's date in the shop's timezone, regardless of what timezone the
 // server itself happens to run in.
 function shopToday() {
@@ -253,13 +273,19 @@ async function maybeGrantBirthday(customer) {
   return { customer: rowToCustomer(rows[0]), birthdayGranted: true };
 }
 
-// Shop-wide totals for the live stats page.
+// Shop-wide totals for the live stats page. Excludes anything flagged
+// is_test — dev/QA accounts never count toward numbers shown to the shop
+// or used in marketing.
 async function getStats() {
   const [punches, customers, redeemed, outstanding] = await Promise.all([
-    pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers`),
-    pool.query(`select count(*)::int as n from customers`),
-    pool.query(`select count(*)::int as n from events where event_type = 'redeem'`),
-    pool.query(`select coalesce(sum(free_rewards), 0)::int as n from customers`),
+    pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers where not is_test`),
+    pool.query(`select count(*)::int as n from customers where not is_test`),
+    pool.query(`
+      select count(*)::int as n from events e
+      join customers c on c.token = e.customer_token
+      where e.event_type = 'redeem' and not c.is_test
+    `),
+    pool.query(`select coalesce(sum(free_rewards), 0)::int as n from customers where not is_test`),
   ]);
   return {
     totalPunches: punches.rows[0].n,
@@ -328,25 +354,29 @@ function fillMonthly(rows, months) {
 // Day-over-day (30d), week-over-week (12wk), and month-over-month (12mo)
 // punch counts, plus how many customers have ever come back for a second
 // coffee (total_coffees >= 2 — total_coffees is a lifetime counter that
-// never resets, even across free-reward rollovers).
+// never resets, even across free-reward rollovers). Excludes is_test
+// accounts throughout, same as getStats().
 async function getDashboardStats() {
   const [dailyRaw, weeklyRaw, monthlyRaw, repeat] = await Promise.all([
     pool.query(
-      `select date_trunc('day', created_at) as bucket, count(*)::int as punches
-       from events where event_type = 'punch' and created_at >= now() - interval '30 days'
+      `select date_trunc('day', e.created_at) as bucket, count(*)::int as punches
+       from events e join customers c on c.token = e.customer_token
+       where e.event_type = 'punch' and not c.is_test and e.created_at >= now() - interval '30 days'
        group by bucket order by bucket`
     ),
     pool.query(
-      `select date_trunc('week', created_at) as bucket, count(*)::int as punches
-       from events where event_type = 'punch' and created_at >= now() - interval '84 days'
+      `select date_trunc('week', e.created_at) as bucket, count(*)::int as punches
+       from events e join customers c on c.token = e.customer_token
+       where e.event_type = 'punch' and not c.is_test and e.created_at >= now() - interval '84 days'
        group by bucket order by bucket`
     ),
     pool.query(
-      `select date_trunc('month', created_at) as bucket, count(*)::int as punches
-       from events where event_type = 'punch' and created_at >= now() - interval '365 days'
+      `select date_trunc('month', e.created_at) as bucket, count(*)::int as punches
+       from events e join customers c on c.token = e.customer_token
+       where e.event_type = 'punch' and not c.is_test and e.created_at >= now() - interval '365 days'
        group by bucket order by bucket`
     ),
-    pool.query(`select count(*)::int as n from customers where total_coffees >= 2`),
+    pool.query(`select count(*)::int as n from customers where total_coffees >= 2 and not is_test`),
   ]);
 
   return {
@@ -364,6 +394,7 @@ module.exports = {
   createCustomer,
   addPunch,
   redeem,
+  setTestFlag,
   maybeGrantBirthday,
   getStats,
   getDashboardStats,
