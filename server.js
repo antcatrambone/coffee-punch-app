@@ -73,7 +73,9 @@ function publicCustomer(c) {
     punches: c.punches,
     punchesNeeded: PUNCHES_NEEDED,
     freeRewards: c.freeRewards,
+    redeemedRewards: c.redeemedRewards,
     totalCoffees: c.totalCoffees,
+    isTest: c.isTest,
     createdAt: c.createdAt,
   };
 }
@@ -218,6 +220,23 @@ app.post(
     io.to(result.customer.token).emit('reward-redeemed', payload);
     broadcastStats();
     res.json(payload);
+  })
+);
+
+// Marks (or unmarks) a card as a test/dev account, e.g. anything created
+// while trying out the signup flow yourself. Test accounts stay fully
+// intact — nothing is deleted — they're just excluded from /api/stats and
+// the staff dashboard from that point on.
+app.post(
+  '/api/staff/mark-test',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const { token, isTest } = req.body;
+    const customer = await db.setTestFlag(token, isTest !== false);
+    if (!customer) return res.status(404).json({ error: 'Card not found.' });
+
+    broadcastStats();
+    res.json(publicCustomer(customer));
   })
 );
 
