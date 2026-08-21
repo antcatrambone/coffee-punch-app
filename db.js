@@ -386,7 +386,90 @@ async function getDashboardStats() {
     repeatCustomers: repeat.rows[0].n,
   };
 }
+// ---------- owner dashboard: high-level business metrics ----------
 
+// Same weekly bucketing as fillWeekly above, but with a generic
+// {weekStart, value} shape instead of a hardcoded "punches" field, so one
+// helper covers punches, signups, or anything else counted weekly later.
+function weeklySeries(rows, weeks) {
+  const map = new Map(rows.map((r) => [isoDay(new Date(r.bucket)), r.n]));
+  const out = [];
+  const thisWeek = weekStart(new Date());
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(thisWeek);
+    d.setUTCDate(d.getUTCDate() - i * 7);
+    const key = isoDay(d);
+    out.push({ weekStart: key, value: map.get(key) || 0 });
+  }
+  return out;
+}
+
+// Turns a name into something friendly for a leaderboard without exposing
+// a full last name on a screen that might be visible at the counter.
+function vipDisplayName(firstName, lastName) {
+  if (firstName && lastName) return `${firstName} ${lastName.charAt(0).toUpperCase()}.`;
+  if (firstName) return firstName;
+  return 'A loyal regular';
+}
+
+// Everything the owner-facing dashboard needs in one call: headline
+// totals, two 12-week trend lines (punches and signups), and a top-3
+// leaderboard by lifetime punches. Excludes is_test accounts throughout,
+// same as getStats()/getDashboardStats() — a shop owner's numbers should
+// never include anything created while building or testing the app.
+async function getOwnerDashboard() {
+  const [totalsRes, punchesRes, rewardsRes, repeatRes, weeklyPunchesRaw, weeklySignupsRaw, vipRaw] = await Promise.all([
+    pool.query(`select count(*)::int as n from customers where not is_test`),
+    pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers where not is_test`),
+    pool.query(`
+      select count(*)::int as n from events e
+      join customers c on c.token = e.customer_token
+      where e.event_type in ('reward_earned', 'birthday_reward') and not c.is_test
+    `),
+    pool.query(`
+      select
+        count(*)::int as total,
+        count(*) filter (where total_coffees >= 2)::int as repeat
+      from customers where not is_test
+    `),
+    pool.query(`
+      select date_trunc('week', e.created_at) as bucket, count(*)::int as n
+      from events e join customers c on c.token = e.customer_token
+      where e.event_type = 'punch' and not c.is_test and e.created_at >= now() - interval '84 days'
+      group by bucket order by bucket
+    `),
+    pool.query(`
+      select date_trunc('week', e.created_at) as bucket, count(*)::int as n
+      from events e join customers c on c.token = e.customer_token
+      where e.event_type = 'signup' and not c.is_test and e.created_at >= now() - interval '84 days'
+      group by bucket order by bucket
+    `),
+    pool.query(`
+      select first_name, last_name, total_coffees
+      from customers
+      where not is_test and total_coffees > 0
+      order by total_coffees desc, created_at asc
+      limit 3
+    `),
+  ]);
+
+  const totalSignups = totalsRes.rows[0].n;
+  const repeatCustomers = repeatRes.rows[0].repeat;
+
+  return {
+    totalSignups,
+    totalPunches: punchesRes.rows[0].n,
+    totalRewardsEarned: rewardsRes.rows[0].n,
+    repeatCustomers,
+    repeatRatePercent: totalSignups > 0 ? Math.round((repeatCustomers / totalSignups) * 100) : 0,
+    weeklyPunches: weeklySeries(weeklyPunchesRaw.rows, 12),
+    weeklySignups: weeklySeries(weeklySignupsRaw.rows, 12),
+    vip: vipRaw.rows.map((r) => ({
+      name: vipDisplayName(r.first_name, r.last_name),
+      totalCoffees: r.total_coffees,
+    })),
+  };
+}
 module.exports = {
   init,
   findByToken,
@@ -398,4 +481,5 @@ module.exports = {
   maybeGrantBirthday,
   getStats,
   getDashboardStats,
+  getOwnerDashboard,
 };
