@@ -170,6 +170,18 @@ app.get(
     res.json(dashboard);
   })
 );
+// Owner-facing metrics — same PIN as the staff routes for now (there's no
+// separate owner credential yet). Easy to split into its own OWNER_PIN env
+// var later if you want the business-wide numbers gated separately from
+// staff punch/redeem actions.
+app.get(
+  '/api/owner/dashboard',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const dashboard = await db.getOwnerDashboard();
+    res.json(dashboard);
+  })
+);
 
 app.post(
   '/api/staff/lookup',
