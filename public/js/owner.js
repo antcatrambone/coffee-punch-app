@@ -10,11 +10,22 @@
 
   const statSignups = document.getElementById('statSignups');
   const statPunches = document.getElementById('statPunches');
+  const statPunchesToday = document.getElementById('statPunchesToday');
   const statRewards = document.getElementById('statRewards');
   const statRepeatRate = document.getElementById('statRepeatRate');
 
   function getPin() {
     return localStorage.getItem('staffPin') || '';
+  }
+
+  // Weekly buckets are stored as 'YYYY-MM-DD' strings (see weeklySeries()
+  // in db.js) — parsed manually rather than through Date/toLocaleDateString
+  // so a viewer's local timezone can't shift the date shown by a day.
+  function shortDateLabel(iso) {
+    const parts = iso.split('-');
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    return `${month}/${day}`;
   }
 
   // ---------- count-up animation for the big numbers ----------
@@ -137,6 +148,19 @@
     requestAnimationFrame(() => {
       area.style.opacity = '1';
     });
+
+    // X-axis labels: a plain flex row under the SVG rather than SVG <text>,
+    // since the points are evenly spaced — an equal-width flex column per
+    // point lines up closely enough without any coordinate math.
+    const labelsRow = document.createElement('div');
+    labelsRow.className = 'line-chart-labels';
+    series.forEach((s) => {
+      const label = document.createElement('span');
+      label.className = 'line-chart-label';
+      label.textContent = shortDateLabel(s.weekStart);
+      labelsRow.appendChild(label);
+    });
+    container.appendChild(labelsRow);
   }
 
   // ---------- VIP list ----------
@@ -179,6 +203,7 @@
     if (!dashboardData) return;
     countUp(statSignups, dashboardData.totalSignups);
     countUp(statPunches, dashboardData.totalPunches);
+    countUp(statPunchesToday, dashboardData.punchesToday);
     countUp(statRewards, dashboardData.totalRewardsEarned);
     countUp(statRepeatRate, dashboardData.repeatRatePercent, '%');
 
