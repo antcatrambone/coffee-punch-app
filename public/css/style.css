@@ -601,3 +601,98 @@ body {
   font-size: 0.85rem;
   padding: 30px 0;
 }
+
+
+/* ---------- Owner dashboard page ---------- */
+
+.line-chart-panel {
+  margin-top: 16px;
+}
+
+.line-chart {
+  width: 100%;
+  height: 150px;
+}
+
+.line-chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.line-chart-path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.line-chart-area {
+  stroke: none;
+}
+
+.line-chart-dot {
+  opacity: 0;
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: dotPopIn 0.4s cubic-bezier(.2, 1.4, .4, 1) forwards;
+}
+
+@keyframes dotPopIn {
+  0% { opacity: 0; transform: scale(0); }
+  60% { opacity: 1; transform: scale(1.4); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.trend-note {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--brown);
+}
+
+.vip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--kraft);
+  opacity: 0;
+  animation: vipSlideIn 0.45s ease forwards;
+}
+
+@keyframes vipSlideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.vip-medal {
+  font-size: 1.3rem;
+  width: 1.6rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.vip-name {
+  flex: 1;
+  font-weight: 700;
+  color: var(--brown-dark);
+  font-size: 0.92rem;
+}
+
+.vip-count {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
