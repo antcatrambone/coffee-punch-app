@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Owner Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap wide">
+    <div class="brand">
+      <img id="logoImg" class="logo-img" src="logo.webp" alt="" onerror="this.style.display='none'" />
+      <h1 id="shopName">Owner Dashboard</h1>
+      <p id="shopTagline">How your punch card program is doing</p>
+    </div>
+
+    <!-- PIN gate -->
+    <div class="panel" id="pinPanel">
+      <label for="pin">Staff PIN</label>
+      <input id="pin" type="password" inputmode="numeric" placeholder="••••" />
+      <button id="pinBtn">View dashboard</button>
+      <div class="error" id="pinError"></div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="ownerPanel" style="display:none;">
+
+      <div class="stats-grid">
+        <div class="stat-tile">
+          <div class="stat-number" id="statSignups">0</div>
+          <div class="stat-label">Regulars Signed Up</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-number" id="statPunches">0</div>
+          <div class="stat-label">Total Punches Given</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-number" id="statRewards">0</div>
+          <div class="stat-label">Free Rewards Earned</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-number" id="statRepeatRate">0%</div>
+          <div class="stat-label">Come Back For Seconds</div>
+        </div>
+      </div>
+
+      <div class="chart-panel line-chart-panel">
+        <div class="chart-title">Punches given, by week</div>
+        <div class="line-chart" id="punchesLineChart"></div>
+        <div class="trend-note" id="punchesTrendNote"></div>
+      </div>
+
+      <div class="chart-panel line-chart-panel">
+        <div class="chart-title">New sign-ups, by week</div>
+        <div class="line-chart" id="signupsLineChart"></div>
+        <div class="trend-note" id="signupsTrendNote"></div>
+      </div>
+
+      <div class="chart-panel">
+        <div class="chart-title">Your VIPs — most punches ever</div>
+        <div class="vip-list" id="vipList"></div>
+      </div>
+
+      <div class="staff-status" id="liveNote">Updates live — leave this page open.</div>
+      <a class="switch-link" href="dashboard.html">Staff dashboard →</a>
+      <button class="switch-link" id="lockBtn">Lock dashboard</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/owner.js"></script>
+</body>
+</html>
