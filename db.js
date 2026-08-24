@@ -422,20 +422,27 @@ async function getOwnerDashboard() {
   const [totalsRes, punchesRes, punchesTodayRes, signupsTodayRes, rewardsRes, repeatRes, weeklyPunchesRaw, weeklySignupsRaw, vipRaw] = await Promise.all([
     pool.query(`select count(*)::int as n from customers where not is_test`),
     pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers where not is_test`),
-    // Same UTC-day bucketing as fillDaily above, just narrowed to "today."
+    // "Today" means the shop's local business day, not the database's UTC
+    // day — the database itself runs in UTC, so slicing on UTC midnight
+    // would zero these out mid-afternoon/evening for a US shop. Bucketing
+    // in America/New_York (and letting Postgres's named-zone handling take
+    // care of daylight saving) keeps this aligned with when the shop is
+    // actually open. Hardcoded to this shop's timezone for now — if this
+    // app ever serves shops in other timezones, this needs to become a
+    // per-shop setting instead of a hardcoded zone.
     pool.query(`
       select count(*)::int as n from events e
       join customers c on c.token = e.customer_token
       where e.event_type = 'punch' and not c.is_test
-        and e.created_at >= date_trunc('day', now())
-        and e.created_at < date_trunc('day', now()) + interval '1 day'
+        and e.created_at >= date_trunc('day', now() at time zone 'America/New_York') at time zone 'America/New_York'
+        and e.created_at < (date_trunc('day', now() at time zone 'America/New_York') + interval '1 day') at time zone 'America/New_York'
     `),
     pool.query(`
       select count(*)::int as n from events e
       join customers c on c.token = e.customer_token
       where e.event_type = 'signup' and not c.is_test
-        and e.created_at >= date_trunc('day', now())
-        and e.created_at < date_trunc('day', now()) + interval '1 day'
+        and e.created_at >= date_trunc('day', now() at time zone 'America/New_York') at time zone 'America/New_York'
+        and e.created_at < (date_trunc('day', now() at time zone 'America/New_York') + interval '1 day') at time zone 'America/New_York'
     `),
     pool.query(`
       select count(*)::int as n from events e
