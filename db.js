@@ -419,7 +419,7 @@ function vipDisplayName(firstName, lastName) {
 // same as getStats()/getDashboardStats() — a shop owner's numbers should
 // never include anything created while building or testing the app.
 async function getOwnerDashboard() {
-  const [totalsRes, punchesRes, punchesTodayRes, rewardsRes, repeatRes, weeklyPunchesRaw, weeklySignupsRaw, vipRaw] = await Promise.all([
+  const [totalsRes, punchesRes, punchesTodayRes, signupsTodayRes, rewardsRes, repeatRes, weeklyPunchesRaw, weeklySignupsRaw, vipRaw] = await Promise.all([
     pool.query(`select count(*)::int as n from customers where not is_test`),
     pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers where not is_test`),
     // Same UTC-day bucketing as fillDaily above, just narrowed to "today."
@@ -427,6 +427,13 @@ async function getOwnerDashboard() {
       select count(*)::int as n from events e
       join customers c on c.token = e.customer_token
       where e.event_type = 'punch' and not c.is_test
+        and e.created_at >= date_trunc('day', now())
+        and e.created_at < date_trunc('day', now()) + interval '1 day'
+    `),
+    pool.query(`
+      select count(*)::int as n from events e
+      join customers c on c.token = e.customer_token
+      where e.event_type = 'signup' and not c.is_test
         and e.created_at >= date_trunc('day', now())
         and e.created_at < date_trunc('day', now()) + interval '1 day'
     `),
@@ -469,6 +476,7 @@ async function getOwnerDashboard() {
     totalSignups,
     totalPunches: punchesRes.rows[0].n,
     punchesToday: punchesTodayRes.rows[0].n,
+    signupsToday: signupsTodayRes.rows[0].n,
     totalRewardsEarned: rewardsRes.rows[0].n,
     repeatCustomers,
     repeatRatePercent: totalSignups > 0 ? Math.round((repeatCustomers / totalSignups) * 100) : 0,
