@@ -11,6 +11,7 @@
   const statSignups = document.getElementById('statSignups');
   const statPunches = document.getElementById('statPunches');
   const statPunchesToday = document.getElementById('statPunchesToday');
+  const statSignupsToday = document.getElementById('statSignupsToday');
   const statRewards = document.getElementById('statRewards');
   const statRepeatRate = document.getElementById('statRepeatRate');
 
@@ -204,6 +205,7 @@
     countUp(statSignups, dashboardData.totalSignups);
     countUp(statPunches, dashboardData.totalPunches);
     countUp(statPunchesToday, dashboardData.punchesToday);
+    countUp(statSignupsToday, dashboardData.signupsToday);
     countUp(statRewards, dashboardData.totalRewardsEarned);
     countUp(statRepeatRate, dashboardData.repeatRatePercent, '%');
 
