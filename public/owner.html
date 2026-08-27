@@ -55,6 +55,13 @@
         </div>
       </div>
 
+      <!-- Shared range filter — controls both weekly charts below -->
+      <div class="tab-row compact" id="rangeTabs">
+        <button class="tab-btn" data-weeks="4">4 Weeks</button>
+        <button class="tab-btn active" data-weeks="12">12 Weeks</button>
+        <button class="tab-btn" data-weeks="26">26 Weeks</button>
+      </div>
+
       <div class="chart-panel line-chart-panel">
         <div class="chart-title">Punches given, by week</div>
         <div class="line-chart" id="punchesLineChart"></div>
@@ -68,7 +75,12 @@
       </div>
 
       <div class="chart-panel">
-        <div class="chart-title">Your VIPs — most punches ever</div>
+        <div class="chart-title" id="vipTitle">Your VIPs — All-Time</div>
+        <div class="tab-row compact" id="vipTabs">
+          <button class="tab-btn active" data-vip-window="all">All-Time</button>
+          <button class="tab-btn" data-vip-window="month">This Month</button>
+          <button class="tab-btn" data-vip-window="year">This Year</button>
+        </div>
         <div class="vip-list" id="vipList"></div>
       </div>
 
