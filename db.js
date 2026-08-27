@@ -413,13 +413,67 @@ function vipDisplayName(firstName, lastName) {
   return 'A loyal regular';
 }
 
+// Builds the top-3 VIP leaderboard query for a given time window.
+// 'all' trusts the customers.total_coffees running total (fast, and the
+// long-standing source of truth for lifetime punches). 'month'/'year'
+// instead sum punch events within that window, since total_coffees has
+// no concept of "punches earned this month" — it only ever counts up.
+// Window boundaries use the shop's local calendar (see punchesToday
+// above) so "this month" matches what the owner would expect by eye.
+function vipQueryForWindow(vipWindow) {
+  if (vipWindow === 'month') {
+    return {
+      text: `
+        select c.first_name, c.last_name, count(*)::int as total_coffees, min(e.created_at) as first_at
+        from events e
+        join customers c on c.token = e.customer_token
+        where e.event_type = 'punch' and not c.is_test
+          and e.created_at >= date_trunc('month', now() at time zone 'America/New_York') at time zone 'America/New_York'
+        group by c.token, c.first_name, c.last_name
+        order by total_coffees desc, first_at asc
+        limit 3
+      `,
+    };
+  }
+  if (vipWindow === 'year') {
+    return {
+      text: `
+        select c.first_name, c.last_name, count(*)::int as total_coffees, min(e.created_at) as first_at
+        from events e
+        join customers c on c.token = e.customer_token
+        where e.event_type = 'punch' and not c.is_test
+          and e.created_at >= date_trunc('year', now() at time zone 'America/New_York') at time zone 'America/New_York'
+        group by c.token, c.first_name, c.last_name
+        order by total_coffees desc, first_at asc
+        limit 3
+      `,
+    };
+  }
+  return {
+    text: `
+      select first_name, last_name, total_coffees, created_at as first_at
+      from customers
+      where not is_test and total_coffees > 0
+      order by total_coffees desc, created_at asc
+      limit 3
+    `,
+  };
+}
+
 // Everything the owner-facing dashboard needs in one call: headline
-// totals, two 12-week trend lines (punches and signups), and a top-3
-// leaderboard by lifetime punches. Excludes is_test accounts throughout,
-// same as getStats()/getDashboardStats() — a shop owner's numbers should
-// never include anything created while building or testing the app.
-async function getOwnerDashboard() {
-  const [totalsRes, punchesRes, punchesTodayRes, signupsTodayRes, rewardsRes, repeatRes, weeklyPunchesRaw, weeklySignupsRaw, vipRaw] = await Promise.all([
+// totals, trend lines (punches and signups) over the requested number of
+// weeks, and a top-3 leaderboard scoped to the requested VIP window.
+// Excludes is_test accounts throughout, same as getStats()/
+// getDashboardStats() — a shop owner's numbers should never include
+// anything created while building or testing the app.
+async function getOwnerDashboard(weeks = 12, vipWindow = 'all') {
+  // Defense in depth: server.js already validates/clamps these, but
+  // getOwnerDashboard() shouldn't trust its caller blindly either.
+  const safeWeeks = Number.isInteger(weeks) && weeks >= 1 && weeks <= 52 ? weeks : 12;
+  const safeVipWindow = ['all', 'month', 'year'].includes(vipWindow) ? vipWindow : 'all';
+  const vipQuery = vipQueryForWindow(safeVipWindow);
+
+  const [totalsRes, punchesRes, punchesTodayRes, signupsTodayRes, rollingRes, rewardsRes, repeatRes, weeklyPunchesRaw, weeklySignupsRaw, vipRaw] = await Promise.all([
     pool.query(`select count(*)::int as n from customers where not is_test`),
     pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers where not is_test`),
     // "Today" means the shop's local business day, not the database's UTC
@@ -444,6 +498,36 @@ async function getOwnerDashboard() {
         and e.created_at >= date_trunc('day', now() at time zone 'America/New_York') at time zone 'America/New_York'
         and e.created_at < (date_trunc('day', now() at time zone 'America/New_York') + interval '1 day') at time zone 'America/New_York'
     `),
+    // Rolling 7-day comparison for the "up/down vs. last week" note under
+    // each chart. Comparing calendar weeks (this week so far vs. all of
+    // last week) makes the trend look falsely "down" for most of every
+    // week, since a partial week is compared against a complete one. Two
+    // fixed 7-day windows — the last 7 days vs. the 7 days before that —
+    // are always apples-to-apples regardless of what day it is. Windows
+    // end at the close of the shop's local "today" (see punchesToday
+    // above) so today's activity counts in the "last 7 days" bucket.
+    pool.query(`
+      select
+        count(*) filter (
+          where e.event_type = 'punch' and e.created_at >= b.day_end - interval '7 days' and e.created_at < b.day_end
+        )::int as punches_last7,
+        count(*) filter (
+          where e.event_type = 'punch' and e.created_at >= b.day_end - interval '14 days' and e.created_at < b.day_end - interval '7 days'
+        )::int as punches_prev7,
+        count(*) filter (
+          where e.event_type = 'signup' and e.created_at >= b.day_end - interval '7 days' and e.created_at < b.day_end
+        )::int as signups_last7,
+        count(*) filter (
+          where e.event_type = 'signup' and e.created_at >= b.day_end - interval '14 days' and e.created_at < b.day_end - interval '7 days'
+        )::int as signups_prev7
+      from events e
+      join customers c on c.token = e.customer_token
+      cross join (
+        select (date_trunc('day', now() at time zone 'America/New_York') + interval '1 day') at time zone 'America/New_York' as day_end
+      ) b
+      where e.event_type in ('punch', 'signup') and not c.is_test
+        and e.created_at >= b.day_end - interval '14 days' and e.created_at < b.day_end
+    `),
     pool.query(`
       select count(*)::int as n from events e
       join customers c on c.token = e.customer_token
@@ -455,40 +539,45 @@ async function getOwnerDashboard() {
         count(*) filter (where total_coffees >= 2)::int as repeat
       from customers where not is_test
     `),
-    pool.query(`
+    pool.query(
+      `
       select date_trunc('week', e.created_at) as bucket, count(*)::int as n
       from events e join customers c on c.token = e.customer_token
-      where e.event_type = 'punch' and not c.is_test and e.created_at >= now() - interval '84 days'
+      where e.event_type = 'punch' and not c.is_test and e.created_at >= now() - make_interval(days => $1)
       group by bucket order by bucket
-    `),
-    pool.query(`
+    `,
+      [safeWeeks * 7]
+    ),
+    pool.query(
+      `
       select date_trunc('week', e.created_at) as bucket, count(*)::int as n
       from events e join customers c on c.token = e.customer_token
-      where e.event_type = 'signup' and not c.is_test and e.created_at >= now() - interval '84 days'
+      where e.event_type = 'signup' and not c.is_test and e.created_at >= now() - make_interval(days => $1)
       group by bucket order by bucket
-    `),
-    pool.query(`
-      select first_name, last_name, total_coffees
-      from customers
-      where not is_test and total_coffees > 0
-      order by total_coffees desc, created_at asc
-      limit 3
-    `),
+    `,
+      [safeWeeks * 7]
+    ),
+    pool.query(vipQuery.text),
   ]);
 
   const totalSignups = totalsRes.rows[0].n;
   const repeatCustomers = repeatRes.rows[0].repeat;
+  const rolling = rollingRes.rows[0];
 
   return {
     totalSignups,
     totalPunches: punchesRes.rows[0].n,
     punchesToday: punchesTodayRes.rows[0].n,
     signupsToday: signupsTodayRes.rows[0].n,
+    punchesRolling7: { last7: rolling.punches_last7, prev7: rolling.punches_prev7 },
+    signupsRolling7: { last7: rolling.signups_last7, prev7: rolling.signups_prev7 },
     totalRewardsEarned: rewardsRes.rows[0].n,
     repeatCustomers,
     repeatRatePercent: totalSignups > 0 ? Math.round((repeatCustomers / totalSignups) * 100) : 0,
-    weeklyPunches: weeklySeries(weeklyPunchesRaw.rows, 12),
-    weeklySignups: weeklySeries(weeklySignupsRaw.rows, 12),
+    weeks: safeWeeks,
+    weeklyPunches: weeklySeries(weeklyPunchesRaw.rows, safeWeeks),
+    weeklySignups: weeklySeries(weeklySignupsRaw.rows, safeWeeks),
+    vipWindow: safeVipWindow,
     vip: vipRaw.rows.map((r) => ({
       name: vipDisplayName(r.first_name, r.last_name),
       totalCoffees: r.total_coffees,
