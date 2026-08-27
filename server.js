@@ -170,15 +170,28 @@ app.get(
     res.json(dashboard);
   })
 );
+
 // Owner-facing metrics — same PIN as the staff routes for now (there's no
 // separate owner credential yet). Easy to split into its own OWNER_PIN env
 // var later if you want the business-wide numbers gated separately from
 // staff punch/redeem actions.
+//
+// ?weeks= controls how much chart history to pull (4/12/26-week filter on
+// the dashboard); ?vipWindow= controls the VIP leaderboard's time scope
+// (all-time vs. this month vs. this year). Both are validated here (not
+// just trusted from the query string) since they flow into SQL.
+const ALLOWED_OWNER_WEEKS = [4, 12, 26];
+const ALLOWED_VIP_WINDOWS = ['all', 'month', 'year'];
+
 app.get(
   '/api/owner/dashboard',
   requireStaffPin,
   asyncRoute(async (req, res) => {
-    const dashboard = await db.getOwnerDashboard();
+    const weeksParam = parseInt(req.query.weeks, 10);
+    const weeks = ALLOWED_OWNER_WEEKS.includes(weeksParam) ? weeksParam : 12;
+    const vipWindow = ALLOWED_VIP_WINDOWS.includes(req.query.vipWindow) ? req.query.vipWindow : 'all';
+
+    const dashboard = await db.getOwnerDashboard(weeks, vipWindow);
     res.json(dashboard);
   })
 );
