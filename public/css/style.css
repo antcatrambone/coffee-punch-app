@@ -539,6 +539,21 @@ body {
   color: #fff;
 }
 
+/* Smaller-footprint variant for tab rows embedded inside a chart-panel
+   (the owner dashboard's range/VIP-window filters), where the panel's own
+   padding already provides spacing and the buttons don't need to be as
+   tall as the top-level staff dashboard tabs. */
+.tab-row.compact {
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.tab-row.compact .tab-btn {
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  border-radius: 8px;
+}
+
 .chart-panel {
   background: #ffffff;
   border-radius: 18px;
