@@ -15,8 +15,38 @@
   const statRewards = document.getElementById('statRewards');
   const statRepeatRate = document.getElementById('statRepeatRate');
 
+  const rangeTabs = document.getElementById('rangeTabs');
+  const vipTabs = document.getElementById('vipTabs');
+  const vipTitle = document.getElementById('vipTitle');
+
+  const VIP_WINDOW_LABELS = { all: 'All-Time', month: 'This Month', year: 'This Year' };
+
   function getPin() {
     return localStorage.getItem('staffPin') || '';
+  }
+
+  // Filter state persists across visits (same idea as the saved staff PIN)
+  // so the owner doesn't have to re-pick "26 weeks" every time they open
+  // the page. Falls back to sane defaults if localStorage has garbage in
+  // it or nothing at all.
+  const ALLOWED_WEEKS = [4, 12, 26];
+  const ALLOWED_VIP_WINDOWS = ['all', 'month', 'year'];
+
+  function loadFilterState() {
+    const savedWeeks = parseInt(localStorage.getItem('ownerDashboardWeeks'), 10);
+    const savedVipWindow = localStorage.getItem('ownerDashboardVipWindow');
+    return {
+      weeks: ALLOWED_WEEKS.includes(savedWeeks) ? savedWeeks : 12,
+      vipWindow: ALLOWED_VIP_WINDOWS.includes(savedVipWindow) ? savedVipWindow : 'all',
+    };
+  }
+
+  const filterState = loadFilterState();
+
+  function setActiveTab(tabRow, datasetKey, value) {
+    Array.from(tabRow.children).forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset[datasetKey] === String(value));
+    });
   }
 
   // Weekly buckets are stored as 'YYYY-MM-DD' strings (see weeklySeries()
@@ -60,16 +90,21 @@
   // ---------- plain-English trend note under each chart ----------
   // Translates "here's a line" into a sentence, since the audience for
   // this page shouldn't have to read a chart to know if things are good.
-  function trendNote(series) {
-    if (!series || series.length < 2) return '';
-    const last = series[series.length - 1].value;
-    const prev = series[series.length - 2].value;
-    if (prev === 0 && last === 0) return 'No activity yet this week.';
-    if (prev === 0) return `${last} this week — a fresh start!`;
-    const pct = Math.round(((last - prev) / prev) * 100);
-    if (pct > 0) return `▲ Up ${pct}% from last week`;
-    if (pct < 0) return `▼ Down ${Math.abs(pct)}% from last week`;
-    return 'Same as last week';
+  //
+  // Compares two rolling 7-day windows (last 7 days vs. the 7 days before
+  // that) rather than "this calendar week so far" vs. "all of last week."
+  // The calendar-week version made the trend look falsely negative for
+  // most of every week, since a partial week was always being compared
+  // against a complete one.
+  function trendNote(rolling) {
+    if (!rolling) return '';
+    const { last7, prev7 } = rolling;
+    if (prev7 === 0 && last7 === 0) return 'No activity in the last 7 days.';
+    if (prev7 === 0) return `${last7} in the last 7 days — a fresh start!`;
+    const pct = Math.round(((last7 - prev7) / prev7) * 100);
+    if (pct > 0) return `▲ Up ${pct}% vs. the previous 7 days`;
+    if (pct < 0) return `▼ Down ${Math.abs(pct)}% vs. the previous 7 days`;
+    return 'Same as the previous 7 days';
   }
 
   // ---------- animated SVG line chart ----------
@@ -215,7 +250,7 @@
       { line: 'var(--accent)', area: 'rgba(249, 157, 28, 0.18)' },
       'No punches yet.'
     );
-    document.getElementById('punchesTrendNote').textContent = trendNote(dashboardData.weeklyPunches);
+    document.getElementById('punchesTrendNote').textContent = trendNote(dashboardData.punchesRolling7);
 
     renderLineChart(
       document.getElementById('signupsLineChart'),
@@ -223,13 +258,15 @@
       { line: 'var(--brown-dark)', area: 'rgba(92, 18, 32, 0.12)' },
       'No sign-ups yet.'
     );
-    document.getElementById('signupsTrendNote').textContent = trendNote(dashboardData.weeklySignups);
+    document.getElementById('signupsTrendNote').textContent = trendNote(dashboardData.signupsRolling7);
 
+    vipTitle.textContent = `Your VIPs — ${VIP_WINDOW_LABELS[dashboardData.vipWindow] || 'All-Time'}`;
     renderVipList(dashboardData.vip);
   }
 
   async function loadDashboard() {
-    const res = await fetch('/api/owner/dashboard', { headers: { 'x-staff-pin': getPin() } });
+    const params = new URLSearchParams({ weeks: filterState.weeks, vipWindow: filterState.vipWindow });
+    const res = await fetch(`/api/owner/dashboard?${params}`, { headers: { 'x-staff-pin': getPin() } });
     if (!res.ok) throw new Error('Could not load dashboard.');
     return res.json();
   }
@@ -254,6 +291,34 @@
     refresh().catch(() => {});
     connectSocket();
   }
+
+  // Reflect saved/default filter state in the tab buttons immediately,
+  // before the first fetch even resolves, so the UI doesn't flash the
+  // wrong tab as "active" for a moment.
+  setActiveTab(rangeTabs, 'weeks', filterState.weeks);
+  setActiveTab(vipTabs, 'vipWindow', filterState.vipWindow);
+
+  rangeTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    const weeks = parseInt(btn.dataset.weeks, 10);
+    if (!ALLOWED_WEEKS.includes(weeks) || weeks === filterState.weeks) return;
+    filterState.weeks = weeks;
+    localStorage.setItem('ownerDashboardWeeks', String(weeks));
+    setActiveTab(rangeTabs, 'weeks', weeks);
+    refresh().catch(() => {});
+  });
+
+  vipTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    const vipWindow = btn.dataset.vipWindow;
+    if (!ALLOWED_VIP_WINDOWS.includes(vipWindow) || vipWindow === filterState.vipWindow) return;
+    filterState.vipWindow = vipWindow;
+    localStorage.setItem('ownerDashboardVipWindow', vipWindow);
+    setActiveTab(vipTabs, 'vipWindow', vipWindow);
+    refresh().catch(() => {});
+  });
 
   // Try a saved PIN first so this can be left open on the owner's own device.
   if (getPin()) {
