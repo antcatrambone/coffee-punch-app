@@ -249,6 +249,34 @@ app.get(
   })
 );
 
+// Sends (or, until a real SMS provider is configured, simulates) one
+// message to every phone number in a segment. See sendSmsViaProvider() in
+// db.js for exactly what "simulated" means and how this becomes real
+// sending later. Always opted-in-only — see sendSegmentSms() in db.js for
+// why that's not something the caller can override here.
+app.post(
+  '/api/owner/marketing/segments/:id/send-sms',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const message = (req.body.message || '').trim();
+    if (!message) return res.status(400).json({ error: 'Message cannot be empty.' });
+    if (message.length > 480) return res.status(400).json({ error: 'Message is too long (max 480 characters).' });
+
+    const result = await db.sendSegmentSms(req.params.id, PUNCHES_NEEDED, message);
+    if (!result) return res.status(404).json({ error: 'Unknown segment.' });
+    res.json(result);
+  })
+);
+
+app.get(
+  '/api/owner/marketing/sms-log',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const batches = await db.getSmsBatches(20);
+    res.json({ batches });
+  })
+);
+
 app.post(
   '/api/staff/lookup',
   requireStaffPin,
