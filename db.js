@@ -585,6 +585,210 @@ async function getOwnerDashboard(weeks = 12, vipWindow = 'all') {
   };
 }
 
+// ---------- marketing: customer segmentation ----------
+//
+// This is the data layer behind the owner-facing "Marketing" page: a set
+// of predefined customer segments (e.g. "signed up today," "one punch
+// from a reward") that an owner can browse, preview, and export as a CSV
+// to paste into whatever they actually send email/SMS from — Mailchimp,
+// their phone, etc. This app deliberately does not send messages itself;
+// it just answers "who should I message, and what do I know about them."
+//
+// New segments only need an entry added to segmentDefinitions() — the
+// count, preview, and export routes all derive from that one list.
+
+// Every segment query takes `includeNonOptedIn` (default false). With it
+// false, only customers who checked the marketing opt-in box at signup
+// are included. This matters because the whole point of this feature is
+// exporting a list to actually message people, and messaging someone who
+// didn't consent — especially over SMS — is both bad practice and, in the
+// US, real legal exposure (TCPA) for whoever hits "send." Defaulting to
+// opted-in-only makes the safe choice the easy choice; the toggle exists
+// for an owner who wants to see full segment size for planning purposes.
+function optInClause(includeNonOptedIn, alias = 'c') {
+  return includeNonOptedIn ? 'true' : `${alias}.marketing_opt_in`;
+}
+
+function segmentDefinitions(punchesNeeded) {
+  const oneAway = Math.max(punchesNeeded - 1, 0);
+  return [
+    {
+      id: 'signed_up_today',
+      label: 'Signed Up Today',
+      description: "Joined the program today — a welcome or first-visit nudge lands best while it's fresh.",
+      buildQuery: (includeNonOptedIn) => ({
+        text: `
+          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at
+          from customers c
+          where not c.is_test and ${optInClause(includeNonOptedIn)}
+            and c.created_at >= date_trunc('day', now() at time zone 'America/New_York') at time zone 'America/New_York'
+            and c.created_at < (date_trunc('day', now() at time zone 'America/New_York') + interval '1 day') at time zone 'America/New_York'
+          order by c.created_at desc
+        `,
+      }),
+    },
+    {
+      id: 'one_away_from_reward',
+      label: 'One Punch Away From a Reward',
+      description: `Sitting at ${oneAway} of ${punchesNeeded} punches — a nudge now could be the difference between them finishing the card or letting it go cold.`,
+      buildQuery: (includeNonOptedIn) => ({
+        text: `
+          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.punches, c.total_coffees, c.created_at
+          from customers c
+          where not c.is_test and ${optInClause(includeNonOptedIn)} and c.punches = $1
+          order by c.created_at desc
+        `,
+        values: [oneAway],
+      }),
+    },
+    {
+      id: 'lapsed_14_days',
+      label: 'Lapsed — No Punch in 14+ Days',
+      description: "Signed up more than two weeks ago and haven't punched in the last 14 days — classic win-back territory.",
+      buildQuery: (includeNonOptedIn) => ({
+        text: `
+          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at, lp.last_punch_at
+          from customers c
+          left join lateral (
+            select max(e.created_at) as last_punch_at
+            from events e
+            where e.customer_token = c.token and e.event_type = 'punch'
+          ) lp on true
+          where not c.is_test and ${optInClause(includeNonOptedIn)}
+            and c.created_at < now() - interval '14 days'
+            and (lp.last_punch_at is null or lp.last_punch_at < now() - interval '14 days')
+          order by coalesce(lp.last_punch_at, c.created_at) asc
+        `,
+      }),
+    },
+    {
+      id: 'new_this_week',
+      label: 'New This Week',
+      description: 'Signed up in the last 7 days — still forming a habit, a good window for an extra-warm offer.',
+      buildQuery: (includeNonOptedIn) => ({
+        text: `
+          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at
+          from customers c
+          where not c.is_test and ${optInClause(includeNonOptedIn)} and c.created_at >= now() - interval '7 days'
+          order by c.created_at desc
+        `,
+      }),
+    },
+    {
+      id: 'reward_ready',
+      label: 'Reward Ready to Redeem',
+      description: "Already earned a free reward and haven't cashed it in — a reminder text writes itself.",
+      buildQuery: (includeNonOptedIn) => ({
+        text: `
+          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.free_rewards, c.total_coffees, c.created_at
+          from customers c
+          where not c.is_test and ${optInClause(includeNonOptedIn)} and c.free_rewards > 0
+          order by c.free_rewards desc, c.created_at asc
+        `,
+      }),
+    },
+    {
+      id: 'birthday_this_month',
+      label: 'Birthday This Month',
+      description: 'Birthday falls in the current month — a nice hook for a personal-feeling promo beyond the automatic birthday reward.',
+      buildQuery: (includeNonOptedIn) => ({
+        text: `
+          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.birthday, c.total_coffees, c.created_at
+          from customers c
+          where not c.is_test and ${optInClause(includeNonOptedIn)} and c.birthday is not null
+            and extract(month from c.birthday) = extract(month from now() at time zone 'America/New_York')
+          order by extract(day from c.birthday) asc
+        `,
+      }),
+    },
+  ];
+}
+
+// Per-segment human-readable context column, shown in both the on-page
+// preview table and the exported CSV so the "why is this person on this
+// list" reason travels with the row instead of living only in the segment
+// name.
+function formatSegmentDetail(segmentId, row) {
+  switch (segmentId) {
+    case 'one_away_from_reward':
+      return `${row.punches} punches so far`;
+    case 'reward_ready':
+      return `${row.free_rewards} reward${row.free_rewards === 1 ? '' : 's'} waiting`;
+    case 'lapsed_14_days':
+      return row.last_punch_at ? `Last punch ${isoDay(new Date(row.last_punch_at))}` : 'Never punched';
+    case 'birthday_this_month': {
+      if (!row.birthday) return '';
+      const d = new Date(row.birthday);
+      return `Birthday ${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+    }
+    default:
+      return `${row.total_coffees} lifetime punches`;
+  }
+}
+
+async function getMarketingSegments(punchesNeeded, includeNonOptedIn = false) {
+  const defs = segmentDefinitions(punchesNeeded);
+  const results = await Promise.all(
+    defs.map((def) => {
+      const q = def.buildQuery(includeNonOptedIn);
+      return pool.query(`select count(*)::int as n from (${q.text}) as segment_rows`, q.values || []);
+    })
+  );
+  return defs.map((def, i) => ({
+    id: def.id,
+    label: def.label,
+    description: def.description,
+    count: results[i].rows[0].n,
+  }));
+}
+
+async function getMarketingSegmentCustomers(segmentId, punchesNeeded, includeNonOptedIn = false) {
+  const defs = segmentDefinitions(punchesNeeded);
+  const def = defs.find((d) => d.id === segmentId);
+  if (!def) return null;
+
+  const q = def.buildQuery(includeNonOptedIn);
+  const { rows } = await pool.query(q.text, q.values || []);
+
+  return {
+    id: def.id,
+    label: def.label,
+    description: def.description,
+    customers: rows.map((row) => ({
+      firstName: row.first_name,
+      lastName: row.last_name,
+      email: row.email,
+      phone: row.phone,
+      marketingOptIn: row.marketing_opt_in,
+      joinedAt: row.created_at,
+      detail: formatSegmentDetail(def.id, row),
+    })),
+  };
+}
+
+// Plain CSV, no external dependency — this app has stayed dependency-free
+// for exports/reports throughout (see the hand-rolled charts), so a small
+// hand-rolled escaper is consistent with that and one less package to
+// audit/update.
+function customersToCsv(customers) {
+  const columns = [
+    { label: 'First Name', value: (c) => c.firstName || '' },
+    { label: 'Last Name', value: (c) => c.lastName || '' },
+    { label: 'Email', value: (c) => c.email || '' },
+    { label: 'Phone', value: (c) => c.phone || '' },
+    { label: 'Marketing Opt-In', value: (c) => (c.marketingOptIn ? 'Yes' : 'No') },
+    { label: 'Joined', value: (c) => (c.joinedAt ? isoDay(new Date(c.joinedAt)) : '') },
+    { label: 'Detail', value: (c) => c.detail || '' },
+  ];
+  const escape = (val) => {
+    const s = val === null || val === undefined ? '' : String(val);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = columns.map((c) => escape(c.label)).join(',');
+  const lines = customers.map((c) => columns.map((col) => escape(col.value(c))).join(','));
+  return [header, ...lines].join('\r\n');
+}
+
 module.exports = {
   init,
   findByToken,
@@ -597,4 +801,7 @@ module.exports = {
   getStats,
   getDashboardStats,
   getOwnerDashboard,
+  getMarketingSegments,
+  getMarketingSegmentCustomers,
+  customersToCsv,
 };
