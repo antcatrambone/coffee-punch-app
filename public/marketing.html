@@ -65,7 +65,32 @@
           </table>
         </div>
         <div class="chart-empty" id="previewEmpty" style="display:none;">No customers currently match this segment.</div>
+
+        <!-- Send a text to everyone in this segment. Works today in
+             "simulation mode" — no SMS provider is connected yet, so every
+             send is logged and shown exactly as it would look, but nothing
+             actually goes out. See db.js sendSmsViaProvider() for how this
+             becomes real sending later. -->
+        <div class="send-sms-block">
+          <div class="chart-title">Send a Text to This List</div>
+          <div class="sim-banner" id="simBanner">
+            SIMULATION MODE — SMS sending isn't connected yet. This shows exactly what would be sent to each customer, but no real texts go out.
+          </div>
+          <label for="smsMessage" class="sms-label">Message <span class="sms-hint">Use <code>{firstName}</code> to personalize each text.</span></label>
+          <textarea id="smsMessage" rows="3" maxlength="480" placeholder="Hey {firstName}, you're one punch away from a free coffee — see you soon!"></textarea>
+          <div class="sms-counter" id="smsCounter">0 / 480</div>
+          <button class="btn-punch" id="sendSmsBtn">Preview &amp; Send</button>
+          <div class="sms-result" id="smsResult" style="display:none;"></div>
+        </div>
+
         <button class="switch-link" id="closePreviewBtn">← Back to all lists</button>
+      </div>
+
+      <!-- Send history -->
+      <div class="chart-panel">
+        <div class="chart-title">Recent Sends</div>
+        <div id="smsHistory"></div>
+        <div class="chart-empty" id="smsHistoryEmpty" style="display:none;">No messages sent yet.</div>
       </div>
 
       <div class="staff-status" id="liveNote">Segment counts refresh each time you open this page.</div>
