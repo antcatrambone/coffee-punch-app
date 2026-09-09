@@ -2,6 +2,7 @@
 // server.js only ever calls the functions exported here, so this is the
 // only file you'd touch to switch to a different database later.
 const { Pool } = require('pg');
+const { v4: uuidv4 } = require('uuid');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -100,6 +101,27 @@ async function init() {
     insert into reward_tiers (threshold, name)
     values (5, 'Free Coffee')
     on conflict (threshold) do nothing;
+  `);
+
+  // Records every SMS send attempt from the marketing segments page,
+  // whether or not it actually went out. `status` is 'simulated' when no
+  // SMS provider is configured yet (see sendSmsViaProvider below), so the
+  // owner can try the whole flow — write a message, pick a segment, "send"
+  // it — and see exactly what would happen, before any texting service or
+  // its costs are involved. `batch_id` groups every recipient from one
+  // send action together so the history view can show "sent to 42 people"
+  // as a single line instead of 42 separate rows.
+  await pool.query(`
+    create table if not exists sms_log (
+      id bigserial primary key,
+      batch_id uuid not null,
+      customer_token uuid references customers(token) on delete set null,
+      segment_id text not null,
+      message text not null,
+      status text not null,
+      error text,
+      created_at timestamptz not null default now()
+    );
   `);
 }
 
@@ -618,7 +640,7 @@ function segmentDefinitions(punchesNeeded) {
       description: "Joined the program today — a welcome or first-visit nudge lands best while it's fresh.",
       buildQuery: (includeNonOptedIn) => ({
         text: `
-          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at
+          select c.token, c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at
           from customers c
           where not c.is_test and ${optInClause(includeNonOptedIn)}
             and c.created_at >= date_trunc('day', now() at time zone 'America/New_York') at time zone 'America/New_York'
@@ -633,7 +655,7 @@ function segmentDefinitions(punchesNeeded) {
       description: `Sitting at ${oneAway} of ${punchesNeeded} punches — a nudge now could be the difference between them finishing the card or letting it go cold.`,
       buildQuery: (includeNonOptedIn) => ({
         text: `
-          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.punches, c.total_coffees, c.created_at
+          select c.token, c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.punches, c.total_coffees, c.created_at
           from customers c
           where not c.is_test and ${optInClause(includeNonOptedIn)} and c.punches = $1
           order by c.created_at desc
@@ -647,7 +669,7 @@ function segmentDefinitions(punchesNeeded) {
       description: "Signed up more than two weeks ago and haven't punched in the last 14 days — classic win-back territory.",
       buildQuery: (includeNonOptedIn) => ({
         text: `
-          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at, lp.last_punch_at
+          select c.token, c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at, lp.last_punch_at
           from customers c
           left join lateral (
             select max(e.created_at) as last_punch_at
@@ -667,7 +689,7 @@ function segmentDefinitions(punchesNeeded) {
       description: 'Signed up in the last 7 days — still forming a habit, a good window for an extra-warm offer.',
       buildQuery: (includeNonOptedIn) => ({
         text: `
-          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at
+          select c.token, c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at
           from customers c
           where not c.is_test and ${optInClause(includeNonOptedIn)} and c.created_at >= now() - interval '7 days'
           order by c.created_at desc
@@ -680,7 +702,7 @@ function segmentDefinitions(punchesNeeded) {
       description: "Already earned a free reward and haven't cashed it in — a reminder text writes itself.",
       buildQuery: (includeNonOptedIn) => ({
         text: `
-          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.free_rewards, c.total_coffees, c.created_at
+          select c.token, c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.free_rewards, c.total_coffees, c.created_at
           from customers c
           where not c.is_test and ${optInClause(includeNonOptedIn)} and c.free_rewards > 0
           order by c.free_rewards desc, c.created_at asc
@@ -693,7 +715,7 @@ function segmentDefinitions(punchesNeeded) {
       description: 'Birthday falls in the current month — a nice hook for a personal-feeling promo beyond the automatic birthday reward.',
       buildQuery: (includeNonOptedIn) => ({
         text: `
-          select c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.birthday, c.total_coffees, c.created_at
+          select c.token, c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.birthday, c.total_coffees, c.created_at
           from customers c
           where not c.is_test and ${optInClause(includeNonOptedIn)} and c.birthday is not null
             and extract(month from c.birthday) = extract(month from now() at time zone 'America/New_York')
@@ -755,6 +777,7 @@ async function getMarketingSegmentCustomers(segmentId, punchesNeeded, includeNon
     label: def.label,
     description: def.description,
     customers: rows.map((row) => ({
+      token: row.token,
       firstName: row.first_name,
       lastName: row.last_name,
       email: row.email,
@@ -789,6 +812,137 @@ function customersToCsv(customers) {
   return [header, ...lines].join('\r\n');
 }
 
+// ---------- marketing: SMS sending (simulation-first) ----------
+//
+// This is deliberately built "simulation-first": every function here
+// works fully today — pick a segment, write a message, hit send, get a
+// real summary back — but no actual text goes out until a real SMS
+// provider is configured (see sendSmsViaProvider). That means the whole
+// workflow can be built, demoed, and tested for free, with zero risk of
+// accidentally texting a real customer, before signing up for Twilio (or
+// anything else) and taking on its cost/compliance requirements.
+
+// Swaps {firstName} in a message template for the customer's first name
+// (or a generic fallback if they didn't give one). Deliberately minimal —
+// one merge field, not a templating engine — since the entire message is
+// short-form SMS copy an owner types themselves.
+function renderMessageTemplate(template, customer) {
+  const firstName = customer.firstName || 'there';
+  return template.replace(/\{firstName\}/gi, firstName);
+}
+
+// The one seam that turns this from a simulator into a real SMS sender.
+// If TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER aren't
+// all set, every send is simulated — logged and returned to the caller
+// exactly like a real send, just never transmitted. Once those env vars
+// exist (and the `twilio` package is installed — it's intentionally not a
+// dependency yet, since there's no reason to require it before it's
+// needed), this same function starts actually sending, and nothing else
+// in this file needs to change.
+async function sendSmsViaProvider(to, body) {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER } = process.env;
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_NUMBER) {
+    return { status: 'simulated' };
+  }
+
+  let twilio;
+  try {
+    // eslint-disable-next-line global-require
+    twilio = require('twilio');
+  } catch (err) {
+    return {
+      status: 'failed',
+      error: "Twilio credentials are set but the 'twilio' package isn't installed. Run: npm install twilio",
+    };
+  }
+
+  try {
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    await client.messages.create({ to, from: TWILIO_FROM_NUMBER, body });
+    return { status: 'sent' };
+  } catch (err) {
+    return { status: 'failed', error: err.message };
+  }
+}
+
+// Sends (or simulates) one message to every customer in a segment.
+// Always opted-in-only, regardless of what the segment browser's toggle
+// is set to — unlike viewing/exporting a list for your own planning,
+// actually messaging people is the one action where silently including
+// non-consenting customers would be a real problem, so there's no
+// override here on purpose.
+async function sendSegmentSms(segmentId, punchesNeeded, message) {
+  const segment = await getMarketingSegmentCustomers(segmentId, punchesNeeded, false);
+  if (!segment) return null;
+
+  const batchId = uuidv4();
+  const withPhone = segment.customers.filter((c) => c.phone);
+  const skippedNoPhone = segment.customers.length - withPhone.length;
+
+  const results = [];
+  for (const customer of withPhone) {
+    const rendered = renderMessageTemplate(message, customer);
+    const outcome = await sendSmsViaProvider(customer.phone, rendered);
+    await pool.query(
+      `insert into sms_log (batch_id, customer_token, segment_id, message, status, error)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [batchId, customer.token, segmentId, rendered, outcome.status, outcome.error || null]
+    );
+    results.push({ name: customer.firstName || customer.lastName || 'Customer', phone: customer.phone, message: rendered, status: outcome.status });
+  }
+
+  const sentCount = results.filter((r) => r.status === 'sent').length;
+  const simulatedCount = results.filter((r) => r.status === 'simulated').length;
+  const failedCount = results.filter((r) => r.status === 'failed').length;
+
+  return {
+    batchId,
+    segmentId,
+    segmentLabel: segment.label,
+    totalRecipients: withPhone.length,
+    skippedNoPhone,
+    sentCount,
+    simulatedCount,
+    failedCount,
+    isLive: sentCount > 0 || failedCount > 0, // false when every send was simulated
+    previews: results.slice(0, 5),
+  };
+}
+
+// Recent send batches for the "send history" view — one row per batch
+// (not per recipient), so an owner can see "sent to 42 people on Sep 9"
+// as a single glanceable line.
+async function getSmsBatches(limit = 20) {
+  const { rows } = await pool.query(
+    `
+      select
+        batch_id,
+        segment_id,
+        max(message) as message,
+        count(*)::int as recipient_count,
+        count(*) filter (where status = 'sent')::int as sent_count,
+        count(*) filter (where status = 'simulated')::int as simulated_count,
+        count(*) filter (where status = 'failed')::int as failed_count,
+        min(created_at) as sent_at
+      from sms_log
+      group by batch_id, segment_id
+      order by sent_at desc
+      limit $1
+    `,
+    [limit]
+  );
+  return rows.map((r) => ({
+    batchId: r.batch_id,
+    segmentId: r.segment_id,
+    message: r.message,
+    recipientCount: r.recipient_count,
+    sentCount: r.sent_count,
+    simulatedCount: r.simulated_count,
+    failedCount: r.failed_count,
+    sentAt: r.sent_at,
+  }));
+}
+
 module.exports = {
   init,
   findByToken,
@@ -804,4 +958,6 @@ module.exports = {
   getMarketingSegments,
   getMarketingSegmentCustomers,
   customersToCsv,
+  sendSegmentSms,
+  getSmsBatches,
 };
