@@ -196,6 +196,59 @@ app.get(
   })
 );
 
+// ---------- owner-facing marketing segmentation ----------
+//
+// Lets the owner browse and export customer lists cut by simple,
+// marketing-relevant conditions (e.g. "signed up today"). This app never
+// sends the SMS/email itself — the idea is a shop exports a CSV here and
+// pastes it into whatever they already send from (Mailchimp, their
+// phone's contacts, etc.). Segment logic lives in db.js so new segments
+// only need to be added in one place.
+//
+// ?includeNonOptedIn=true bypasses the marketing_opt_in filter. Left off
+// (the default), every list is opted-in customers only — see the comment
+// above optInClause() in db.js for why that's the safer default.
+function parseIncludeNonOptedIn(req) {
+  return req.query.includeNonOptedIn === 'true';
+}
+
+app.get(
+  '/api/owner/marketing/segments',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const includeNonOptedIn = parseIncludeNonOptedIn(req);
+    const segments = await db.getMarketingSegments(PUNCHES_NEEDED, includeNonOptedIn);
+    res.json({ includeNonOptedIn, segments });
+  })
+);
+
+app.get(
+  '/api/owner/marketing/segments/:id/customers',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const includeNonOptedIn = parseIncludeNonOptedIn(req);
+    const result = await db.getMarketingSegmentCustomers(req.params.id, PUNCHES_NEEDED, includeNonOptedIn);
+    if (!result) return res.status(404).json({ error: 'Unknown segment.' });
+    res.json({ ...result, includeNonOptedIn });
+  })
+);
+
+app.get(
+  '/api/owner/marketing/segments/:id/export',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const includeNonOptedIn = parseIncludeNonOptedIn(req);
+    const result = await db.getMarketingSegmentCustomers(req.params.id, PUNCHES_NEEDED, includeNonOptedIn);
+    if (!result) return res.status(404).json({ error: 'Unknown segment.' });
+
+    const csv = db.customersToCsv(result.customers);
+    const filename = `${result.id}-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  })
+);
+
 app.post(
   '/api/staff/lookup',
   requireStaffPin,
