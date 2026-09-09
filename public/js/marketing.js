@@ -19,6 +19,13 @@
   const exportBtn = document.getElementById('exportBtn');
   const closePreviewBtn = document.getElementById('closePreviewBtn');
 
+  const smsMessage = document.getElementById('smsMessage');
+  const smsCounter = document.getElementById('smsCounter');
+  const sendSmsBtn = document.getElementById('sendSmsBtn');
+  const smsResult = document.getElementById('smsResult');
+  const smsHistory = document.getElementById('smsHistory');
+  const smsHistoryEmpty = document.getElementById('smsHistoryEmpty');
+
   let activeSegmentId = null;
 
   function getPin() {
@@ -104,6 +111,7 @@
     previewPanel.style.display = 'block';
     segmentGrid.style.display = 'none';
     previewTableBody.innerHTML = '';
+    resetSmsForm();
 
     const params = new URLSearchParams({ includeNonOptedIn: includeNonOptedIn() });
     const res = await fetch(`/api/owner/marketing/segments/${segmentId}/customers?${params}`, {
@@ -118,6 +126,111 @@
     previewPanel.style.display = 'none';
     segmentGrid.style.display = 'grid';
     activeSegmentId = null;
+    resetSmsForm();
+  }
+
+  // ---------- send a text to the active segment (simulated until a real
+  // SMS provider is configured server-side — see db.js) ----------
+  function resetSmsForm() {
+    smsMessage.value = '';
+    updateSmsCounter();
+    smsResult.style.display = 'none';
+    smsResult.innerHTML = '';
+  }
+
+  function updateSmsCounter() {
+    smsCounter.textContent = `${smsMessage.value.length} / 480`;
+  }
+
+  function renderSmsResult(result) {
+    smsResult.style.display = 'block';
+    smsResult.innerHTML = '';
+
+    const summary = document.createElement('div');
+    summary.className = result.isLive ? 'sms-summary sms-summary-live' : 'sms-summary sms-summary-sim';
+    if (result.isLive) {
+      summary.textContent = `Sent to ${result.sentCount} of ${result.totalRecipients} customers.` +
+        (result.failedCount ? ` ${result.failedCount} failed to send.` : '');
+    } else {
+      summary.textContent = `SIMULATED — would have sent to ${result.simulatedCount} customer${result.simulatedCount === 1 ? '' : 's'}. No real texts were sent.`;
+    }
+    smsResult.appendChild(summary);
+
+    if (result.skippedNoPhone) {
+      const skipped = document.createElement('div');
+      skipped.className = 'sms-skipped-note';
+      skipped.textContent = `${result.skippedNoPhone} customer${result.skippedNoPhone === 1 ? '' : 's'} in this segment have no phone number on file and were skipped.`;
+      smsResult.appendChild(skipped);
+    }
+
+    if (result.previews && result.previews.length) {
+      const previewList = document.createElement('div');
+      previewList.className = 'sms-preview-list';
+      result.previews.forEach((p) => {
+        const row = document.createElement('div');
+        row.className = 'sms-preview-row';
+        row.innerHTML = `<strong>${p.name}</strong> (${p.phone}): "${p.message}"`;
+        previewList.appendChild(row);
+      });
+      smsResult.appendChild(previewList);
+    }
+  }
+
+  async function sendSms() {
+    if (!activeSegmentId) return;
+    const message = smsMessage.value.trim();
+    if (!message) return;
+
+    const originalText = sendSmsBtn.textContent;
+    sendSmsBtn.disabled = true;
+    sendSmsBtn.textContent = 'Sending…';
+    try {
+      const res = await fetch(`/api/owner/marketing/segments/${activeSegmentId}/send-sms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-staff-pin': getPin() },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Send failed.');
+      renderSmsResult(data);
+      loadSmsHistory().catch(() => {});
+    } catch (err) {
+      smsResult.style.display = 'block';
+      smsResult.innerHTML = `<div class="sms-summary sms-summary-error">${err.message}</div>`;
+    } finally {
+      sendSmsBtn.disabled = false;
+      sendSmsBtn.textContent = originalText;
+    }
+  }
+
+  // ---------- send history ----------
+  function renderSmsHistory(batches) {
+    smsHistory.innerHTML = '';
+    smsHistoryEmpty.style.display = batches.length ? 'none' : 'block';
+    batches.forEach((b) => {
+      const row = document.createElement('div');
+      row.className = 'sms-history-row';
+
+      const statusLabel = b.sentCount > 0
+        ? `Sent to ${b.sentCount}${b.failedCount ? `, ${b.failedCount} failed` : ''}`
+        : `Simulated — ${b.simulatedCount} customer${b.simulatedCount === 1 ? '' : 's'}`;
+
+      row.innerHTML = `
+        <div class="sms-history-top">
+          <span class="sms-history-date">${new Date(b.sentAt).toLocaleString()}</span>
+          <span class="sms-history-status">${statusLabel}</span>
+        </div>
+        <div class="sms-history-message">"${b.message}"</div>
+      `;
+      smsHistory.appendChild(row);
+    });
+  }
+
+  async function loadSmsHistory() {
+    const res = await fetch('/api/owner/marketing/sms-log', { headers: { 'x-staff-pin': getPin() } });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderSmsHistory(data.batches);
   }
 
   // ---------- CSV export ----------
@@ -155,7 +268,7 @@
 
   async function refresh() {
     closePreview();
-    await loadSegments();
+    await Promise.all([loadSegments(), loadSmsHistory()]);
   }
 
   function showMarketingPanel() {
@@ -191,6 +304,8 @@
 
   closePreviewBtn.addEventListener('click', closePreview);
   exportBtn.addEventListener('click', exportCsv);
+  smsMessage.addEventListener('input', updateSmsCounter);
+  sendSmsBtn.addEventListener('click', sendSms);
 
   lockBtn.addEventListener('click', () => {
     localStorage.removeItem('staffPin');
