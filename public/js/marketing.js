@@ -28,6 +28,21 @@
 
   let activeSegmentId = null;
 
+  // A ready-to-send starting point for each segment, so opening "Reward
+  // Ready to Redeem" doesn't show the same generic example as "Signed Up
+  // Today." Pre-filled as the actual textarea value (not just placeholder
+  // text) so an owner can see a real, sendable message immediately and
+  // just tweak it — matches the ids returned by segmentDefinitions() in
+  // db.js.
+  const SEGMENT_MESSAGE_TEMPLATES = {
+    signed_up_today: "Hey {firstName}, thanks for joining our coffee club today! We're so glad you're here — see you soon for your first punch!",
+    one_away_from_reward: "Hey {firstName}, you're one punch away from a free coffee — see you soon!",
+    lapsed_14_days: "Hey {firstName}, we miss you! Come by soon and pick up right where you left off on your punch card.",
+    new_this_week: "Hey {firstName}, welcome to the coffee club! Thanks for stopping by this week — hope to see you again soon.",
+    reward_ready: "Hey {firstName}, you've got a free coffee waiting for you! Come redeem it whenever you're ready.",
+    birthday_this_month: "Happy birthday, {firstName}! 🎉 Stop by this month for a treat on us.",
+  };
+
   function getPin() {
     return localStorage.getItem('staffPin') || '';
   }
@@ -111,7 +126,7 @@
     previewPanel.style.display = 'block';
     segmentGrid.style.display = 'none';
     previewTableBody.innerHTML = '';
-    resetSmsForm();
+    resetSmsForm(SEGMENT_MESSAGE_TEMPLATES[segmentId] || '');
 
     const params = new URLSearchParams({ includeNonOptedIn: includeNonOptedIn() });
     const res = await fetch(`/api/owner/marketing/segments/${segmentId}/customers?${params}`, {
@@ -131,8 +146,8 @@
 
   // ---------- send a text to the active segment (simulated until a real
   // SMS provider is configured server-side — see db.js) ----------
-  function resetSmsForm() {
-    smsMessage.value = '';
+  function resetSmsForm(defaultMessage) {
+    smsMessage.value = defaultMessage || '';
     updateSmsCounter();
     smsResult.style.display = 'none';
     smsResult.innerHTML = '';
