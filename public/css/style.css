@@ -560,6 +560,12 @@ body {
   padding: 18px 16px 12px;
   border: 1px solid rgba(92, 18, 32, 0.08);
   box-shadow: 0 10px 24px rgba(92, 18, 32, 0.1);
+  /* Default breathing room whenever panels stack directly on top of each
+     other (e.g. marketing.html's preview panel followed by the Recent
+     Sends panel) â€” without this they render flush against one another
+     since neither has its own spacing rule. .line-chart-panel below sets
+     its own margin-top and wins where both classes are present. */
+  margin-top: 18px;
 }
 
 .chart-title {
@@ -995,4 +1001,111 @@ body {
   font-size: 0.8rem;
   color: var(--brown);
   opacity: 0.9;
+}
+
+/* ---------- Add to Home Screen ---------- */
+
+.install-banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: -140px;
+  max-width: 420px;
+  margin: 0 auto;
+  background: var(--brown-dark);
+  color: #fff;
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.4;
+  transition: bottom 0.35s cubic-bezier(.2,.9,.3,1.15);
+  z-index: 40;
+}
+
+.install-banner.show {
+  bottom: 20px;
+}
+
+.install-banner-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.install-banner-btn,
+.install-banner-dismiss {
+  flex: 1;
+  padding: 9px;
+  border: none;
+  border-radius: 9px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.install-banner-btn {
+  background: var(--accent);
+  color: #fff;
+}
+
+.install-banner-dismiss {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.ios-install-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 8, 12, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 50;
+}
+
+.ios-install-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ios-install-card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  padding: 24px 22px 30px;
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.ios-install-title {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--brown-dark);
+}
+
+.ios-share-icon {
+  display: inline-block;
+}
+
+.ios-install-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  border: none;
+  background: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--brown);
+  cursor: pointer;
 }
