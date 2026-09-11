@@ -648,15 +648,25 @@ body {
   overflow: visible;
 }
 
+/* Invisible touch/hover/focus target for each chart point â€” sized well
+   past the visible dot (which is deliberately tiny) so it's actually easy
+   to hit with a finger or a mouse. Plain HTML divs rather than SVG shapes,
+   positioned in real pixels via the percentage-based left/top set in JS,
+   so they render as true circles no matter how wide the chart stretches. */
 .line-chart-dot-hit {
-  fill: transparent;
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: transparent;
   cursor: pointer;
 }
 
 .line-chart-dot-hit:focus-visible {
   outline: 2px solid var(--brown-dark);
   outline-offset: 1px;
-  fill: rgba(92, 18, 32, 0.08);
+  background: rgba(92, 18, 32, 0.08);
 }
 
 .line-chart-tooltip {
@@ -719,17 +729,25 @@ body {
   stroke: none;
 }
 
+/* The actual visible marker â€” small on purpose (7px) so a dense chart
+   (e.g. 30 daily points) doesn't turn into a strip of overlapping circles.
+   The white ring (box-shadow) is what makes it read clearly against the
+   line and filled area behind it rather than just blending in. */
 .line-chart-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
   opacity: 0;
-  transform-origin: center;
-  transform-box: fill-box;
   animation: dotPopIn 0.4s cubic-bezier(.2, 1.4, .4, 1) forwards;
 }
 
 @keyframes dotPopIn {
-  0% { opacity: 0; transform: scale(0); }
-  60% { opacity: 1; transform: scale(1.4); }
-  100% { opacity: 1; transform: scale(1); }
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0); }
+  60% { opacity: 1; transform: translate(-50%, -50%) scale(1.4); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 .trend-note {
