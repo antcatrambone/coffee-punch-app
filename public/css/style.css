@@ -633,11 +633,65 @@ body {
   width: 100%;
 }
 
+/* Sized exactly to the <svg> it wraps (block-level, so it collapses to
+   the svg's own 150px height) â€” the hover tooltip is positioned with
+   plain percentages of this box, which line up 1:1 with the svg's
+   viewBox units regardless of how wide the panel actually renders. */
+.line-chart-area-wrap {
+  position: relative;
+}
+
 .line-chart-svg {
   width: 100%;
   height: 150px;
   display: block;
   overflow: visible;
+}
+
+.line-chart-dot-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.line-chart-dot-hit:focus-visible {
+  outline: 2px solid var(--brown-dark);
+  outline-offset: 1px;
+  fill: rgba(92, 18, 32, 0.08);
+}
+
+.line-chart-tooltip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: var(--brown-dark);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 5px 9px;
+  border-radius: 7px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+  z-index: 5;
+}
+
+.line-chart-tooltip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--brown-dark);
+}
+
+.line-chart-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 .line-chart-labels {
