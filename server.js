@@ -176,22 +176,29 @@ app.get(
 // var later if you want the business-wide numbers gated separately from
 // staff punch/redeem actions.
 //
-// ?weeks= controls how much chart history to pull (4/12/26-week filter on
-// the dashboard); ?vipWindow= controls the VIP leaderboard's time scope
-// (all-time vs. this month vs. this year). Both are validated here (not
-// just trusted from the query string) since they flow into SQL.
+// ?weeks= controls how much chart history to pull when ?granularity=week
+// (4/12/26-week filter on the dashboard); ?days= does the same when
+// ?granularity=day (7/14/30-day filter, for zooming into recent activity);
+// ?vipWindow= controls the VIP leaderboard's time scope (all-time vs. this
+// month vs. this year). All are validated here (not just trusted from the
+// query string) since they flow into SQL.
 const ALLOWED_OWNER_WEEKS = [4, 12, 26];
+const ALLOWED_OWNER_DAYS = [7, 14, 30];
 const ALLOWED_VIP_WINDOWS = ['all', 'month', 'year'];
+const ALLOWED_GRANULARITY = ['week', 'day'];
 
 app.get(
   '/api/owner/dashboard',
   requireStaffPin,
   asyncRoute(async (req, res) => {
     const weeksParam = parseInt(req.query.weeks, 10);
+    const daysParam = parseInt(req.query.days, 10);
     const weeks = ALLOWED_OWNER_WEEKS.includes(weeksParam) ? weeksParam : 12;
+    const days = ALLOWED_OWNER_DAYS.includes(daysParam) ? daysParam : 14;
     const vipWindow = ALLOWED_VIP_WINDOWS.includes(req.query.vipWindow) ? req.query.vipWindow : 'all';
+    const granularity = ALLOWED_GRANULARITY.includes(req.query.granularity) ? req.query.granularity : 'week';
 
-    const dashboard = await db.getOwnerDashboard(weeks, vipWindow);
+    const dashboard = await db.getOwnerDashboard({ weeks, days, vipWindow, granularity });
     res.json(dashboard);
   })
 );
