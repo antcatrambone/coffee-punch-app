@@ -218,6 +218,10 @@
     path.style.stroke = color.line;
     svg.appendChild(path);
 
+    // Appended now (before the dot markers below) so the line/area render
+    // underneath them, not on top.
+    chartArea.appendChild(svg);
+
     const tooltip = document.createElement('div');
     tooltip.className = 'line-chart-tooltip';
     tooltip.setAttribute('role', 'status');
@@ -241,25 +245,34 @@
       dismissActiveTooltip = hideTooltip;
     }
 
+    // Markers are plain positioned <div>s over the chart, not SVG circles —
+    // the svg stretches non-uniformly (preserveAspectRatio="none", since
+    // the line/area needs to fill whatever width the panel renders at),
+    // which turns actual SVG circles into stretched ovals on any panel
+    // wider than the 600:150 viewBox ratio. A div sized in real pixels via
+    // CSS stays a perfect, small circle regardless of chart width, and
+    // it's positioned with the same percentage-of-wrapper trick as the
+    // tooltip above.
     points.forEach((p, i) => {
-      const dot = document.createElementNS(svg.namespaceURI, 'circle');
-      dot.setAttribute('cx', p.x);
-      dot.setAttribute('cy', p.y);
-      dot.setAttribute('r', 4);
-      dot.setAttribute('class', 'line-chart-dot');
-      dot.style.fill = color.line;
-      dot.style.animationDelay = `${400 + i * 35}ms`;
-      svg.appendChild(dot);
+      const xPct = (p.x / W) * 100;
+      const yPct = (p.y / H) * 100;
 
-      // A larger, invisible hit target — the visible dot is only 4px,
+      const dot = document.createElement('div');
+      dot.className = 'line-chart-dot';
+      dot.style.left = `${xPct}%`;
+      dot.style.top = `${yPct}%`;
+      dot.style.background = color.line;
+      dot.style.animationDelay = `${400 + i * 35}ms`;
+      chartArea.appendChild(dot);
+
+      // A larger, invisible hit target — the visible dot is only 7px,
       // too small to reliably hover or tap on its own. Keyboard-focusable
       // too, so the exact value behind each point is reachable without a
       // mouse or a touchscreen.
-      const hit = document.createElementNS(svg.namespaceURI, 'circle');
-      hit.setAttribute('cx', p.x);
-      hit.setAttribute('cy', p.y);
-      hit.setAttribute('r', 11);
-      hit.setAttribute('class', 'line-chart-dot-hit');
+      const hit = document.createElement('div');
+      hit.className = 'line-chart-dot-hit';
+      hit.style.left = `${xPct}%`;
+      hit.style.top = `${yPct}%`;
       hit.setAttribute('tabindex', '0');
       hit.setAttribute('role', 'img');
       hit.setAttribute('aria-label', tooltipText(p, granularity, metric));
@@ -268,10 +281,9 @@
       hit.addEventListener('pointerleave', hideTooltip);
       hit.addEventListener('focus', () => showTooltip(p, i));
       hit.addEventListener('blur', hideTooltip);
-      svg.appendChild(hit);
+      chartArea.appendChild(hit);
     });
 
-    chartArea.appendChild(svg);
     chartArea.appendChild(tooltip);
     container.appendChild(chartArea);
 
