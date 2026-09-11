@@ -412,7 +412,7 @@ async function getDashboardStats() {
 // ---------- owner dashboard: high-level business metrics ----------
 
 // Same weekly bucketing as fillWeekly above, but with a generic
-// {weekStart, value} shape instead of a hardcoded "punches" field, so one
+// {periodStart, value} shape instead of a hardcoded "punches" field, so one
 // helper covers punches, signups, or anything else counted weekly later.
 function weeklySeries(rows, weeks) {
   const map = new Map(rows.map((r) => [isoDay(new Date(r.bucket)), r.n]));
@@ -422,7 +422,28 @@ function weeklySeries(rows, weeks) {
     const d = new Date(thisWeek);
     d.setUTCDate(d.getUTCDate() - i * 7);
     const key = isoDay(d);
-    out.push({ weekStart: key, value: map.get(key) || 0 });
+    out.push({ periodStart: key, value: map.get(key) || 0 });
+  }
+  return out;
+}
+
+// Same idea as weeklySeries() above, but bucketed by single calendar day
+// instead of by week — powers the owner dashboard's "Day" view, for a
+// closer look at recent activity than the weekly trend lines give. Rows
+// are expected to already be bucketed in the shop's local day (see the
+// `at time zone 'America/New_York'` query in getOwnerDashboard() below),
+// same reasoning as the "today" boundary elsewhere in this file: slicing
+// on UTC days would shift a day's activity into the wrong bucket for a
+// US shop for several hours around each day's edge.
+function dailySeries(rows, days) {
+  const map = new Map(rows.map((r) => [isoDay(new Date(r.bucket)), r.n]));
+  const out = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = isoDay(d);
+    out.push({ periodStart: key, value: map.get(key) || 0 });
   }
   return out;
 }
@@ -483,19 +504,53 @@ function vipQueryForWindow(vipWindow) {
 }
 
 // Everything the owner-facing dashboard needs in one call: headline
-// totals, trend lines (punches and signups) over the requested number of
-// weeks, and a top-3 leaderboard scoped to the requested VIP window.
-// Excludes is_test accounts throughout, same as getStats()/
-// getDashboardStats() — a shop owner's numbers should never include
-// anything created while building or testing the app.
-async function getOwnerDashboard(weeks = 12, vipWindow = 'all') {
+// totals, trend lines (punches and signups) over the requested range, and
+// a top-3 leaderboard scoped to the requested VIP window. Excludes is_test
+// accounts throughout, same as getStats()/getDashboardStats() — a shop
+// owner's numbers should never include anything created while building or
+// testing the app.
+//
+// `granularity` picks whether the trend lines are bucketed by week (the
+// original behavior, `weeks` controls how many) or by single day (`days`
+// controls how many) — the owner dashboard exposes both as a toggle so an
+// owner can zoom into "what happened yesterday" as easily as "how's this
+// quarter going."
+async function getOwnerDashboard({ weeks = 12, days = 14, vipWindow = 'all', granularity = 'week' } = {}) {
   // Defense in depth: server.js already validates/clamps these, but
   // getOwnerDashboard() shouldn't trust its caller blindly either.
   const safeWeeks = Number.isInteger(weeks) && weeks >= 1 && weeks <= 52 ? weeks : 12;
+  const safeDays = [7, 14, 30].includes(days) ? days : 14;
   const safeVipWindow = ['all', 'month', 'year'].includes(vipWindow) ? vipWindow : 'all';
+  const safeGranularity = ['week', 'day'].includes(granularity) ? granularity : 'week';
   const vipQuery = vipQueryForWindow(safeVipWindow);
 
-  const [totalsRes, punchesRes, punchesTodayRes, signupsTodayRes, rollingRes, rewardsRes, repeatRes, weeklyPunchesRaw, weeklySignupsRaw, vipRaw] = await Promise.all([
+  // Day buckets are computed in the shop's local timezone (same reasoning
+  // as "today" elsewhere in this file); week buckets stay in plain UTC,
+  // matching the original behavior — a week-wide bucket doesn't shift
+  // noticeably from a few hours of timezone offset the way a single day's
+  // bucket would.
+  const seriesQuery = (eventType) =>
+    safeGranularity === 'day'
+      ? pool.query(
+          `
+      select date_trunc('day', e.created_at at time zone 'America/New_York') as bucket, count(*)::int as n
+      from events e join customers c on c.token = e.customer_token
+      where e.event_type = $2 and not c.is_test and e.created_at >= now() - make_interval(days => $1)
+      group by bucket order by bucket
+    `,
+          [safeDays, eventType]
+        )
+      : pool.query(
+          `
+      select date_trunc('week', e.created_at) as bucket, count(*)::int as n
+      from events e join customers c on c.token = e.customer_token
+      where e.event_type = $2 and not c.is_test and e.created_at >= now() - make_interval(days => $1)
+      group by bucket order by bucket
+    `,
+          [safeWeeks * 7, eventType]
+        );
+
+  const [totalsRes, punchesRes, punchesTodayRes, signupsTodayRes, rollingRes, rewardsRes, repeatRes, seriesPunchesRaw, seriesSignupsRaw, vipRaw] = await Promise.all([
     pool.query(`select count(*)::int as n from customers where not is_test`),
     pool.query(`select coalesce(sum(total_coffees), 0)::int as n from customers where not is_test`),
     // "Today" means the shop's local business day, not the database's UTC
@@ -561,30 +616,16 @@ async function getOwnerDashboard(weeks = 12, vipWindow = 'all') {
         count(*) filter (where total_coffees >= 2)::int as repeat
       from customers where not is_test
     `),
-    pool.query(
-      `
-      select date_trunc('week', e.created_at) as bucket, count(*)::int as n
-      from events e join customers c on c.token = e.customer_token
-      where e.event_type = 'punch' and not c.is_test and e.created_at >= now() - make_interval(days => $1)
-      group by bucket order by bucket
-    `,
-      [safeWeeks * 7]
-    ),
-    pool.query(
-      `
-      select date_trunc('week', e.created_at) as bucket, count(*)::int as n
-      from events e join customers c on c.token = e.customer_token
-      where e.event_type = 'signup' and not c.is_test and e.created_at >= now() - make_interval(days => $1)
-      group by bucket order by bucket
-    `,
-      [safeWeeks * 7]
-    ),
+    seriesQuery('punch'),
+    seriesQuery('signup'),
     pool.query(vipQuery.text),
   ]);
 
   const totalSignups = totalsRes.rows[0].n;
   const repeatCustomers = repeatRes.rows[0].repeat;
   const rolling = rollingRes.rows[0];
+  const buildSeries = safeGranularity === 'day' ? dailySeries : weeklySeries;
+  const seriesRange = safeGranularity === 'day' ? safeDays : safeWeeks;
 
   return {
     totalSignups,
@@ -596,9 +637,13 @@ async function getOwnerDashboard(weeks = 12, vipWindow = 'all') {
     totalRewardsEarned: rewardsRes.rows[0].n,
     repeatCustomers,
     repeatRatePercent: totalSignups > 0 ? Math.round((repeatCustomers / totalSignups) * 100) : 0,
+    granularity: safeGranularity,
     weeks: safeWeeks,
-    weeklyPunches: weeklySeries(weeklyPunchesRaw.rows, safeWeeks),
-    weeklySignups: weeklySeries(weeklySignupsRaw.rows, safeWeeks),
+    days: safeDays,
+    series: {
+      punches: buildSeries(seriesPunchesRaw.rows, seriesRange),
+      signups: buildSeries(seriesSignupsRaw.rows, seriesRange),
+    },
     vipWindow: safeVipWindow,
     vip: vipRaw.rows.map((r) => ({
       name: vipDisplayName(r.first_name, r.last_name),
