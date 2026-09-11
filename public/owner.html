@@ -55,21 +55,24 @@
         </div>
       </div>
 
-      <!-- Shared range filter — controls both weekly charts below -->
-      <div class="tab-row compact" id="rangeTabs">
-        <button class="tab-btn" data-weeks="4">4 Weeks</button>
-        <button class="tab-btn active" data-weeks="12">12 Weeks</button>
-        <button class="tab-btn" data-weeks="26">26 Weeks</button>
+      <!-- Shared filters — control both charts below. Granularity picks
+           whether each point is a week or a single day; the range row
+           underneath is rebuilt by owner.js to match (4/12/26 weeks, or
+           7/14/30 days). -->
+      <div class="tab-row compact" id="granularityTabs">
+        <button class="tab-btn active" data-granularity="week">Week view</button>
+        <button class="tab-btn" data-granularity="day">Day view</button>
       </div>
+      <div class="tab-row compact" id="rangeTabs"></div>
 
       <div class="chart-panel line-chart-panel">
-        <div class="chart-title">Punches given, by week</div>
+        <div class="chart-title" id="punchesChartTitle">Punches given, by week</div>
         <div class="line-chart" id="punchesLineChart"></div>
         <div class="trend-note" id="punchesTrendNote"></div>
       </div>
 
       <div class="chart-panel line-chart-panel">
-        <div class="chart-title">New sign-ups, by week</div>
+        <div class="chart-title" id="signupsChartTitle">New sign-ups, by week</div>
         <div class="line-chart" id="signupsLineChart"></div>
         <div class="trend-note" id="signupsTrendNote"></div>
       </div>
