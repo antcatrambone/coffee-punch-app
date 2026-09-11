@@ -15,6 +15,7 @@
   const statRewards = document.getElementById('statRewards');
   const statRepeatRate = document.getElementById('statRepeatRate');
 
+  const granularityTabs = document.getElementById('granularityTabs');
   const rangeTabs = document.getElementById('rangeTabs');
   const vipTabs = document.getElementById('vipTabs');
   const vipTitle = document.getElementById('vipTitle');
@@ -28,15 +29,23 @@
   // Filter state persists across visits (same idea as the saved staff PIN)
   // so the owner doesn't have to re-pick "26 weeks" every time they open
   // the page. Falls back to sane defaults if localStorage has garbage in
-  // it or nothing at all.
+  // it or nothing at all. Week range and day range are remembered
+  // separately, so flipping the granularity toggle back and forth doesn't
+  // lose whichever range you'd picked for the other view.
   const ALLOWED_WEEKS = [4, 12, 26];
+  const ALLOWED_DAYS = [7, 14, 30];
   const ALLOWED_VIP_WINDOWS = ['all', 'month', 'year'];
+  const ALLOWED_GRANULARITY = ['week', 'day'];
 
   function loadFilterState() {
+    const savedGranularity = localStorage.getItem('ownerDashboardGranularity');
     const savedWeeks = parseInt(localStorage.getItem('ownerDashboardWeeks'), 10);
+    const savedDays = parseInt(localStorage.getItem('ownerDashboardDays'), 10);
     const savedVipWindow = localStorage.getItem('ownerDashboardVipWindow');
     return {
+      granularity: ALLOWED_GRANULARITY.includes(savedGranularity) ? savedGranularity : 'week',
       weeks: ALLOWED_WEEKS.includes(savedWeeks) ? savedWeeks : 12,
+      days: ALLOWED_DAYS.includes(savedDays) ? savedDays : 14,
       vipWindow: ALLOWED_VIP_WINDOWS.includes(savedVipWindow) ? savedVipWindow : 'all',
     };
   }
@@ -49,6 +58,24 @@
     });
   }
 
+  // The range row's buttons depend on which granularity is active (4/12/26
+  // weeks vs. 7/14/30 days) — rebuilt from scratch rather than toggling
+  // `display` on two static rows, so there's only one place that owns
+  // "what range values exist."
+  function renderRangeTabs() {
+    rangeTabs.innerHTML = '';
+    const isDay = filterState.granularity === 'day';
+    const values = isDay ? ALLOWED_DAYS : ALLOWED_WEEKS;
+    const activeValue = isDay ? filterState.days : filterState.weeks;
+    values.forEach((value) => {
+      const btn = document.createElement('button');
+      btn.className = 'tab-btn' + (value === activeValue ? ' active' : '');
+      btn.dataset.range = String(value);
+      btn.textContent = `${value} ${isDay ? (value === 1 ? 'Day' : 'Days') : (value === 1 ? 'Week' : 'Weeks')}`;
+      rangeTabs.appendChild(btn);
+    });
+  }
+
   // Weekly buckets are stored as 'YYYY-MM-DD' strings (see weeklySeries()
   // in db.js) — parsed manually rather than through Date/toLocaleDateString
   // so a viewer's local timezone can't shift the date shown by a day.
@@ -57,6 +84,19 @@
     const month = parseInt(parts[1], 10);
     const day = parseInt(parts[2], 10);
     return `${month}/${day}`;
+  }
+
+  // Used only in day-view tooltips, where "Tue 9/9" reads a lot faster
+  // than a bare date when you're scanning across a week of daily points.
+  const WEEKDAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function weekdayAbbr(iso) {
+    const parts = iso.split('-').map((p) => parseInt(p, 10));
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    return WEEKDAY_ABBR[d.getUTCDay()];
+  }
+
+  function pluralize(n, singular, plural) {
+    return n === 1 ? singular : plural;
   }
 
   // ---------- count-up animation for the big numbers ----------
@@ -107,11 +147,27 @@
     return 'Same as the previous 7 days';
   }
 
+  // A tooltip only ever needs to be dismissed from outside its own chart
+  // via this — set while a tooltip is showing, cleared when hidden. A
+  // single document-level listener (registered once, below) uses it to
+  // close whichever chart's tooltip is open when the owner taps/clicks
+  // anywhere else on the page (needed for touch, which has no hover-away).
+  let dismissActiveTooltip = null;
+
+  function tooltipText(p, granularity, metric) {
+    const countLabel = `${p.value} ${pluralize(p.value, metric.singular, metric.plural)}`;
+    if (granularity === 'day') {
+      return `${weekdayAbbr(p.periodStart)} ${shortDateLabel(p.periodStart)}: ${countLabel}`;
+    }
+    return `Week of ${shortDateLabel(p.periodStart)}: ${countLabel}`;
+  }
+
   // ---------- animated SVG line chart ----------
   // Hand-rolled rather than a charting library, same philosophy as the
   // existing bar chart on the staff dashboard — no new dependency for
-  // something this simple.
-  function renderLineChart(container, series, color, emptyText) {
+  // something this simple. `metric` is a {singular, plural} label pair
+  // (e.g. {singular:'punch', plural:'punches'}) used in the hover tooltip.
+  function renderLineChart(container, series, color, emptyText, granularity, metric) {
     container.innerHTML = '';
     const values = series.map((s) => s.value);
     const hasData = values.some((v) => v > 0);
@@ -131,11 +187,19 @@
       x: padX + (i / Math.max(1, series.length - 1)) * (W - padX * 2),
       y: H - padY - (s.value / max) * (H - padY * 2),
       value: s.value,
-      weekStart: s.weekStart,
+      periodStart: s.periodStart,
     }));
 
     const linePath = points.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(' ');
     const areaPath = `${linePath} L ${points[points.length - 1].x} ${H - padY} L ${points[0].x} ${H - padY} Z`;
+
+    // Wraps just the <svg> (not the x-axis labels below it) at a size that
+    // exactly matches the svg's own box, so the tooltip can be positioned
+    // with plain percentages of this wrapper instead of measuring pixels —
+    // 0-600/0-150 viewBox units convert straight to 0-100% here regardless
+    // of how wide the panel actually renders.
+    const chartArea = document.createElement('div');
+    chartArea.className = 'line-chart-area-wrap';
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -154,6 +218,29 @@
     path.style.stroke = color.line;
     svg.appendChild(path);
 
+    const tooltip = document.createElement('div');
+    tooltip.className = 'line-chart-tooltip';
+    tooltip.setAttribute('role', 'status');
+
+    function hideTooltip() {
+      tooltip.classList.remove('visible');
+      if (dismissActiveTooltip === hideTooltip) dismissActiveTooltip = null;
+    }
+
+    function showTooltip(p, i) {
+      tooltip.textContent = tooltipText(p, granularity, metric);
+      const xPct = (p.x / W) * 100;
+      const yPct = (p.y / H) * 100;
+      tooltip.style.left = `${xPct}%`;
+      tooltip.style.top = `${yPct}%`;
+      // Always centered over the point (the CSS default transform) —
+      // the chart panel has enough side padding that even the first/last
+      // point's tooltip has room to spill slightly into it without
+      // clipping, and a centered arrow always points at the right dot.
+      tooltip.classList.add('visible');
+      dismissActiveTooltip = hideTooltip;
+    }
+
     points.forEach((p, i) => {
       const dot = document.createElementNS(svg.namespaceURI, 'circle');
       dot.setAttribute('cx', p.x);
@@ -162,13 +249,31 @@
       dot.setAttribute('class', 'line-chart-dot');
       dot.style.fill = color.line;
       dot.style.animationDelay = `${400 + i * 35}ms`;
-      const title = document.createElementNS(svg.namespaceURI, 'title');
-      title.textContent = `Week of ${p.weekStart}: ${p.value}`;
-      dot.appendChild(title);
       svg.appendChild(dot);
+
+      // A larger, invisible hit target — the visible dot is only 4px,
+      // too small to reliably hover or tap on its own. Keyboard-focusable
+      // too, so the exact value behind each point is reachable without a
+      // mouse or a touchscreen.
+      const hit = document.createElementNS(svg.namespaceURI, 'circle');
+      hit.setAttribute('cx', p.x);
+      hit.setAttribute('cy', p.y);
+      hit.setAttribute('r', 11);
+      hit.setAttribute('class', 'line-chart-dot-hit');
+      hit.setAttribute('tabindex', '0');
+      hit.setAttribute('role', 'img');
+      hit.setAttribute('aria-label', tooltipText(p, granularity, metric));
+      hit.addEventListener('pointerenter', () => showTooltip(p, i));
+      hit.addEventListener('pointerdown', () => showTooltip(p, i));
+      hit.addEventListener('pointerleave', hideTooltip);
+      hit.addEventListener('focus', () => showTooltip(p, i));
+      hit.addEventListener('blur', hideTooltip);
+      svg.appendChild(hit);
     });
 
-    container.appendChild(svg);
+    chartArea.appendChild(svg);
+    chartArea.appendChild(tooltip);
+    container.appendChild(chartArea);
 
     // Draw-in animation: measure the path's real length, then animate
     // stroke-dashoffset from "fully hidden" to "fully drawn."
@@ -193,7 +298,7 @@
     series.forEach((s) => {
       const label = document.createElement('span');
       label.className = 'line-chart-label';
-      label.textContent = shortDateLabel(s.weekStart);
+      label.textContent = shortDateLabel(s.periodStart);
       labelsRow.appendChild(label);
     });
     container.appendChild(labelsRow);
@@ -244,19 +349,27 @@
     countUp(statRewards, dashboardData.totalRewardsEarned);
     countUp(statRepeatRate, dashboardData.repeatRatePercent, '%');
 
+    const byLabel = dashboardData.granularity === 'day' ? 'by day' : 'by week';
+    document.getElementById('punchesChartTitle').textContent = `Punches given, ${byLabel}`;
+    document.getElementById('signupsChartTitle').textContent = `New sign-ups, ${byLabel}`;
+
     renderLineChart(
       document.getElementById('punchesLineChart'),
-      dashboardData.weeklyPunches,
+      dashboardData.series.punches,
       { line: 'var(--accent)', area: 'rgba(249, 157, 28, 0.18)' },
-      'No punches yet.'
+      'No punches yet.',
+      dashboardData.granularity,
+      { singular: 'punch', plural: 'punches' }
     );
     document.getElementById('punchesTrendNote').textContent = trendNote(dashboardData.punchesRolling7);
 
     renderLineChart(
       document.getElementById('signupsLineChart'),
-      dashboardData.weeklySignups,
+      dashboardData.series.signups,
       { line: 'var(--brown-dark)', area: 'rgba(92, 18, 32, 0.12)' },
-      'No sign-ups yet.'
+      'No sign-ups yet.',
+      dashboardData.granularity,
+      { singular: 'sign-up', plural: 'sign-ups' }
     );
     document.getElementById('signupsTrendNote').textContent = trendNote(dashboardData.signupsRolling7);
 
@@ -265,7 +378,12 @@
   }
 
   async function loadDashboard() {
-    const params = new URLSearchParams({ weeks: filterState.weeks, vipWindow: filterState.vipWindow });
+    const params = new URLSearchParams({
+      granularity: filterState.granularity,
+      weeks: filterState.weeks,
+      days: filterState.days,
+      vipWindow: filterState.vipWindow,
+    });
     const res = await fetch(`/api/owner/dashboard?${params}`, { headers: { 'x-staff-pin': getPin() } });
     if (!res.ok) throw new Error('Could not load dashboard.');
     return res.json();
@@ -295,17 +413,38 @@
   // Reflect saved/default filter state in the tab buttons immediately,
   // before the first fetch even resolves, so the UI doesn't flash the
   // wrong tab as "active" for a moment.
-  setActiveTab(rangeTabs, 'weeks', filterState.weeks);
+  setActiveTab(granularityTabs, 'granularity', filterState.granularity);
+  renderRangeTabs();
   setActiveTab(vipTabs, 'vipWindow', filterState.vipWindow);
+
+  granularityTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    const granularity = btn.dataset.granularity;
+    if (!ALLOWED_GRANULARITY.includes(granularity) || granularity === filterState.granularity) return;
+    filterState.granularity = granularity;
+    localStorage.setItem('ownerDashboardGranularity', granularity);
+    setActiveTab(granularityTabs, 'granularity', granularity);
+    renderRangeTabs();
+    refresh().catch(() => {});
+  });
 
   rangeTabs.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (!btn) return;
-    const weeks = parseInt(btn.dataset.weeks, 10);
-    if (!ALLOWED_WEEKS.includes(weeks) || weeks === filterState.weeks) return;
-    filterState.weeks = weeks;
-    localStorage.setItem('ownerDashboardWeeks', String(weeks));
-    setActiveTab(rangeTabs, 'weeks', weeks);
+    const range = parseInt(btn.dataset.range, 10);
+    const isDay = filterState.granularity === 'day';
+    const allowed = isDay ? ALLOWED_DAYS : ALLOWED_WEEKS;
+    const current = isDay ? filterState.days : filterState.weeks;
+    if (!allowed.includes(range) || range === current) return;
+    if (isDay) {
+      filterState.days = range;
+      localStorage.setItem('ownerDashboardDays', String(range));
+    } else {
+      filterState.weeks = range;
+      localStorage.setItem('ownerDashboardWeeks', String(range));
+    }
+    renderRangeTabs();
     refresh().catch(() => {});
   });
 
@@ -318,6 +457,15 @@
     localStorage.setItem('ownerDashboardVipWindow', vipWindow);
     setActiveTab(vipTabs, 'vipWindow', vipWindow);
     refresh().catch(() => {});
+  });
+
+  // Dismisses whichever chart's hover tooltip is currently open when the
+  // owner taps/clicks anywhere outside a chart point — the only way to
+  // close a tooltip on a touchscreen, which has no "mouse moved away."
+  document.addEventListener('pointerdown', (e) => {
+    if (dismissActiveTooltip && !e.target.closest('.line-chart-dot-hit')) {
+      dismissActiveTooltip();
+    }
   });
 
   // Try a saved PIN first so this can be left open on the owner's own device.
