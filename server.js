@@ -34,6 +34,16 @@ function normalizeName(name) {
   return n || null;
 }
 
+// Restricts a signup-channel slug to a safe shape before it ever reaches
+// SQL — the real validity check (does this channel exist and is it still
+// active) happens in db.js's getSignupChannel(), which falls back to
+// 'in_store' on anything unrecognized. This is just cheap defense against
+// a malformed `?channel=` value, not the source of truth.
+function normalizeChannelSlug(slug) {
+  const s = (slug || '').trim().toLowerCase();
+  return /^[a-z0-9_-]{1,64}$/.test(s) ? s : null;
+}
+
 // The signup form only collects month + day (a fixed placeholder year is
 // used to build this string client-side, since the birthday reward check
 // below ignores year entirely). We re-validate and re-build it here too,
@@ -75,6 +85,7 @@ function publicCustomer(c) {
     freeRewards: c.freeRewards,
     redeemedRewards: c.redeemedRewards,
     totalCoffees: c.totalCoffees,
+    signupChannel: c.signupChannel,
     isTest: c.isTest,
     createdAt: c.createdAt,
   };
@@ -122,6 +133,9 @@ app.post(
     const lastName = normalizeName(req.body.lastName);
     const birthday = normalizeBirthday(req.body.birthday);
     const marketingOptIn = req.body.marketingOptIn === true;
+    // Set by which QR code/link the customer scanned (see index.html),
+    // never by the customer picking it themselves.
+    const channelSlug = normalizeChannelSlug(req.body.channel);
 
     if (!email && !phone) {
       return res.status(400).json({ error: 'Enter an email address or phone number.' });
@@ -130,11 +144,24 @@ app.post(
     let customer = await db.findByContact({ email, phone });
     let isNew = false;
     if (!customer) {
-      customer = await db.createCustomer({ token: uuidv4(), email, phone, firstName, lastName, birthday, marketingOptIn });
+      customer = await db.createCustomer({ token: uuidv4(), email, phone, firstName, lastName, birthday, marketingOptIn, channelSlug });
       isNew = true;
     }
 
-    if (isNew) broadcastStats();
+    // Grant this channel's bonus if there is one and this customer hasn't
+    // already claimed it — deliberately runs for existing customers too,
+    // not just new signups. Someone who already has a punch card and
+    // later scans a campaign QR code (e.g. a Thanksgiving 5K card) still
+    // gets that campaign's free coffee; db.js's claimChannelBonus() makes
+    // sure it only ever happens once per customer per channel.
+    let bonusClaimed = false;
+    if (channelSlug) {
+      const result = await db.claimChannelBonus(customer.token, channelSlug, PUNCHES_NEEDED);
+      bonusClaimed = result.claimed;
+      if (result.claimed) customer = result.customer;
+    }
+
+    if (isNew || bonusClaimed) broadcastStats();
     res.json(publicCustomer(customer));
   })
 );
@@ -200,6 +227,19 @@ app.get(
 
     const dashboard = await db.getOwnerDashboard({ weeks, days, vipWindow, granularity });
     res.json(dashboard);
+  })
+);
+
+// Signups broken down by acquisition channel (in-store vs. a specific
+// campaign/event) — see signup_channels in db.js. Separate from the main
+// dashboard route above since it's its own panel, not part of the
+// week/day chart data.
+app.get(
+  '/api/owner/channels',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const channels = await db.getSignupChannelBreakdown();
+    res.json({ channels });
   })
 );
 
