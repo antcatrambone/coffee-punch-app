@@ -316,6 +316,51 @@
     container.appendChild(labelsRow);
   }
 
+  // ---------- sign-ups by channel ----------
+  // A simple proportional bar list rather than another line chart — the
+  // question this answers ("where are our regulars coming from") is a
+  // comparison between a handful of channels, not a trend over time.
+  function renderChannelList(channels) {
+    const el = document.getElementById('channelList');
+    const empty = document.getElementById('channelListEmpty');
+    el.innerHTML = '';
+    if (!channels || channels.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    const max = Math.max(1, ...channels.map((c) => c.signups));
+    channels.forEach((c, i) => {
+      const row = document.createElement('div');
+      row.className = 'channel-row';
+      row.style.animationDelay = `${i * 90}ms`;
+
+      const head = document.createElement('div');
+      head.className = 'channel-row-head';
+      const label = document.createElement('span');
+      label.className = 'channel-label';
+      label.textContent = c.label;
+      const count = document.createElement('span');
+      count.className = 'channel-count';
+      count.textContent = `${c.signups} sign-up${c.signups === 1 ? '' : 's'}`;
+      head.append(label, count);
+
+      const barTrack = document.createElement('div');
+      barTrack.className = 'channel-bar-track';
+      const bar = document.createElement('div');
+      bar.className = 'channel-bar';
+      bar.style.width = `${Math.round((c.signups / max) * 100)}%`;
+      barTrack.appendChild(bar);
+
+      const sub = document.createElement('div');
+      sub.className = 'channel-sub';
+      sub.textContent = `${c.punches} lifetime punch${c.punches === 1 ? '' : 'es'} · ${c.redeemed} redeemed`;
+
+      row.append(head, barTrack, sub);
+      el.appendChild(row);
+    });
+  }
+
   // ---------- VIP list ----------
   function renderVipList(vip) {
     const el = document.getElementById('vipList');
@@ -387,6 +432,8 @@
 
     vipTitle.textContent = `Your VIPs — ${VIP_WINDOW_LABELS[dashboardData.vipWindow] || 'All-Time'}`;
     renderVipList(dashboardData.vip);
+
+    if (channelData) renderChannelList(channelData.channels);
   }
 
   async function loadDashboard() {
@@ -401,8 +448,18 @@
     return res.json();
   }
 
+  async function loadChannels() {
+    const res = await fetch('/api/owner/channels', { headers: { 'x-staff-pin': getPin() } });
+    if (!res.ok) throw new Error('Could not load channel breakdown.');
+    return res.json();
+  }
+
+  let channelData = null;
+
   async function refresh() {
-    dashboardData = await loadDashboard();
+    const [dashboard, channels] = await Promise.all([loadDashboard(), loadChannels()]);
+    dashboardData = dashboard;
+    channelData = channels;
     renderAll();
   }
 
