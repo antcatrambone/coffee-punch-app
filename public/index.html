@@ -125,6 +125,13 @@
       window.location.href = `card.html?token=${encodeURIComponent(savedToken)}`;
     }
 
+    // Which QR code/link brought someone here — e.g. a Thanksgiving 5K
+    // card would link to "?channel=thanksgiving_5k". Read once from the
+    // URL and sent along at signup; the customer never sees or picks this
+    // themselves; server.js falls back to the in-store default if it's
+    // missing or unrecognized.
+    const signupChannel = new URLSearchParams(window.location.search).get('channel');
+
     submitBtn.addEventListener('click', async () => {
       errorMsg.textContent = '';
       const firstName = firstNameInput.value.trim();
@@ -146,13 +153,16 @@
         const res = await fetch('/api/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ firstName, lastName, email, phone, birthday, marketingOptIn }),
+          body: JSON.stringify({ firstName, lastName, email, phone, birthday, marketingOptIn, channel: signupChannel }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Something went wrong.');
 
         localStorage.setItem('punchCardToken', data.token);
-        window.location.href = `card.html?token=${encodeURIComponent(data.token)}`;
+        // `&new=1` tells card.html this is the moment right after signup —
+        // the best time to offer "Add to Home Screen," since it's when
+        // someone's most likely to want quick access to this card again.
+        window.location.href = `card.html?token=${encodeURIComponent(data.token)}&new=1`;
       } catch (err) {
         errorMsg.textContent = err.message;
         submitBtn.disabled = false;
