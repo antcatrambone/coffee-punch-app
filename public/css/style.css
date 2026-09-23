@@ -343,15 +343,48 @@ body {
   background: var(--accent);
   color: #fff;
   text-align: center;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.95rem;
   display: none;
 }
 
 .reward-banner.show {
   display: block;
   animation: bannerIn 0.4s ease;
+}
+
+.reward-banner-text {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+/* One circular badge per unredeemed free coffee â€” its emoji shows where
+   that reward came from (birthday, a specific campaign, or the default
+   party emoji for a plain 5-punch reward), so multiple rewards on one
+   card read as distinct, tappable-feeling badges rather than a count. */
+.reward-badges {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.reward-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 1.15rem;
+  line-height: 1;
+  animation: badgePop 0.35s ease;
+}
+
+@keyframes badgePop {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes bannerIn {
