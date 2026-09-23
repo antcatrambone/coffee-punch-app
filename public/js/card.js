@@ -16,6 +16,8 @@
   const grid = document.getElementById('punchGrid');
   const statusLine = document.getElementById('statusLine');
   const rewardBanner = document.getElementById('rewardBanner');
+  const rewardBadges = document.getElementById('rewardBadges');
+  const rewardBannerText = document.getElementById('rewardBannerText');
   const contactLine = document.getElementById('contactLine');
   const lifetimeLine = document.getElementById('lifetimeLine');
   const switchLink = document.getElementById('switchLink');
@@ -94,13 +96,31 @@
     lifetimeLine.textContent = `You've received ${n} punch${n === 1 ? '' : 'es'} with us!`;
   }
 
+  // One badge per unredeemed free coffee, each showing where it came from
+  // (a birthday cake, a campaign's own emoji, or the regular party emoji
+  // for a plain 5-punch reward) instead of a single generic line — so a
+  // customer holding more than one reward can see at a glance what each
+  // one is, and staff can see it too when the card is shown at checkout.
+  function renderRewardBadges(c) {
+    const rewards = c.pendingRewards || [];
+    rewardBadges.innerHTML = '';
+    rewards.forEach((r) => {
+      const badge = document.createElement('span');
+      badge.className = 'reward-badge';
+      badge.title = r.label || 'Free Coffee';
+      badge.textContent = r.emoji || '🎉';
+      rewardBadges.appendChild(badge);
+    });
+  }
+
   function renderStatus(c) {
     if (c.freeRewards > 0) {
       statusLine.textContent = `${c.freeRewards} free coffee${c.freeRewards > 1 ? 's' : ''} ready to redeem!`;
     } else {
       statusLine.textContent = `${c.punches} / ${c.punchesNeeded} punches`;
     }
-    rewardBanner.textContent = '🎉 Free coffee unlocked! Show this to staff.';
+    renderRewardBadges(c);
+    rewardBannerText.textContent = 'Show this to staff to redeem.';
     rewardBanner.classList.toggle('show', c.freeRewards > 0);
   }
 
@@ -141,7 +161,8 @@
   }
 
   function celebrateBirthday(c) {
-    rewardBanner.textContent = `🎂 Happy birthday${c.firstName ? ', ' + c.firstName : ''}! We added a free coffee just for you.`;
+    renderRewardBadges(c);
+    rewardBannerText.textContent = `Happy birthday${c.firstName ? ', ' + c.firstName : ''}! We added a free coffee just for you.`;
     rewardBanner.classList.add('show');
     celebrateReward();
   }
