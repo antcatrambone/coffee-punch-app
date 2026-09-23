@@ -125,6 +125,13 @@ async function init() {
       created_at timestamptz not null default now()
     );
   `);
+  // Which emoji represents a free coffee earned through this channel, shown
+  // as a little badge on the customer's punch card (e.g. a turkey for a
+  // Thanksgiving 5K campaign) so multiple free coffees on one card read as
+  // distinct rewards instead of one generic line. Defaults to the regular
+  // party emoji — adding a new campaign later only needs this set if you
+  // want something other than that default, still just a data change.
+  await pool.query(`alter table signup_channels add column if not exists reward_emoji text not null default '🎉';`);
   await pool.query(`
     insert into signup_channels (slug, label)
     values ('in_store', 'In-Store')
@@ -158,6 +165,53 @@ async function init() {
     );
   `);
   await pool.query(`alter table channel_claims enable row level security;`);
+
+  // One row per free coffee a customer has earned, remembering *where it
+  // came from* so the card can show a distinct badge for each one instead
+  // of a single generic "free coffee unlocked" line — a birthday coffee
+  // shows a cake, a Thanksgiving 5K coffee shows a turkey, a plain 5-punch
+  // reward shows the regular party emoji. `redeemed_at` is null while the
+  // reward is still sitting unused on the card; redeem() below fills it in
+  // (oldest first) instead of deleting the row, so redeemed rewards stay in
+  // history. This is deliberately a parallel ledger to customers.free_rewards
+  // (not a replacement) — free_rewards stays the fast, simple counter every
+  // existing query already relies on; this table only adds "and here's the
+  // story behind each one" on top.
+  await pool.query(`
+    create table if not exists reward_grants (
+      id bigserial primary key,
+      customer_token uuid not null references customers(token) on delete cascade,
+      source text not null,
+      channel_slug text references signup_channels(slug),
+      emoji text not null default '🎉',
+      label text not null default 'Free Coffee',
+      created_at timestamptz not null default now(),
+      redeemed_at timestamptz
+    );
+  `);
+  await pool.query(`alter table reward_grants enable row level security;`);
+
+  // Safety-net backfill, safe to run on every boot: tops up each customer's
+  // unredeemed reward_grants rows until they match their existing
+  // free_rewards count. This is what makes existing customers' free
+  // coffees (earned before this feature shipped) show up as badges at all
+  // — they're labeled with the plain party emoji rather than reconstructed
+  // history, since there's no reliable way to know after the fact whether
+  // an old free_rewards count came from punches, a birthday, or a campaign.
+  // Once a customer is caught up, this is a no-op for them (the
+  // greatest(...) below evaluates to 0) — it only ever fills a real gap.
+  await pool.query(`
+    insert into reward_grants (customer_token, source, emoji, label)
+    select c.token, 'punches', '🎉', 'Free Coffee'
+    from customers c
+    left join (
+      select customer_token, count(*)::int as n
+      from reward_grants
+      where redeemed_at is null
+      group by customer_token
+    ) g on g.customer_token = c.token
+    cross join lateral generate_series(1, greatest(c.free_rewards - coalesce(g.n, 0), 0)) gs(i);
+  `);
 
   // Records every SMS send attempt from the marketing segments page,
   // whether or not it actually went out. `status` is 'simulated' when no
@@ -233,7 +287,7 @@ async function findByContact({ email, phone }) {
 async function getSignupChannel(slug) {
   if (!slug) return null;
   const { rows } = await pool.query(
-    `select slug, label, signup_bonus_punches, signup_bonus_rewards
+    `select slug, label, signup_bonus_punches, signup_bonus_rewards, reward_emoji
      from signup_channels where slug = $1 and is_active`,
     [slug]
   );
@@ -242,10 +296,30 @@ async function getSignupChannel(slug) {
 
 async function getActiveSignupChannels() {
   const { rows } = await pool.query(
-    `select slug, label, signup_bonus_punches, signup_bonus_rewards
+    `select slug, label, signup_bonus_punches, signup_bonus_rewards, reward_emoji
      from signup_channels where is_active order by created_at`
   );
   return rows;
+}
+
+// Unredeemed free coffees for one customer, oldest first — each with the
+// emoji/label describing where it came from. This is what lets the card
+// show "🎂 🦃 🎉" instead of just a count.
+async function getPendingRewards(token) {
+  const { rows } = await pool.query(
+    `select emoji, label, source, channel_slug, created_at
+     from reward_grants
+     where customer_token = $1 and redeemed_at is null
+     order by created_at asc, id asc`,
+    [token]
+  );
+  return rows.map((r) => ({
+    emoji: r.emoji,
+    label: r.label,
+    source: r.source,
+    channelSlug: r.channel_slug,
+    earnedAt: r.created_at,
+  }));
 }
 
 // `channelSlug` records where this signup came from (defaults to
@@ -328,6 +402,20 @@ async function claimChannelBonus(token, channelSlug, punchesNeeded) {
     `update customers set punches = $1, free_rewards = $2, total_coffees = $3 where token = $4 returning *`,
     [punches, freeRewards, totalCoffees, token]
   );
+
+  // One reward_grants row per free coffee this claim actually handed out
+  // (a channel can hand out more than one — a flat signup_bonus_rewards
+  // plus whatever rolled over from signup_bonus_punches), each tagged with
+  // this channel's own emoji so it shows up as its own badge on the card.
+  const grantsToAdd = (channel.signup_bonus_rewards || 0) + bonusRewardsFromPunches;
+  if (grantsToAdd > 0) {
+    await pool.query(
+      `insert into reward_grants (customer_token, source, channel_slug, emoji, label)
+       select $1, 'channel', $2, $3, $4 from generate_series(1, $5)`,
+      [token, channel.slug, channel.reward_emoji, channel.label, grantsToAdd]
+    );
+  }
+
   await logEvent(token, 'campaign_bonus_claimed');
   return { claimed: true, customer: rowToCustomer(rows[0]) };
 }
@@ -357,7 +445,13 @@ async function addPunch(token, punchesNeeded) {
   );
 
   await logEvent(token, 'punch');
-  if (rewardEarned) await logEvent(token, 'reward_earned');
+  if (rewardEarned) {
+    await logEvent(token, 'reward_earned');
+    await pool.query(
+      `insert into reward_grants (customer_token, source, emoji, label) values ($1, 'punches', '🎉', 'Free Coffee')`,
+      [token]
+    );
+  }
 
   return { customer: rowToCustomer(rows[0]), rewardEarned };
 }
@@ -374,6 +468,22 @@ async function redeem(token) {
      set free_rewards = free_rewards - 1, redeemed_rewards = redeemed_rewards + 1
      where token = $1
      returning *`,
+    [token]
+  );
+
+  // Marks the oldest unredeemed reward as used, rather than picking any
+  // row arbitrarily, so the badge someone's had the longest is the one
+  // that disappears first — matching how redeeming actually feels to a
+  // customer with multiple free coffees stacked up.
+  await pool.query(
+    `update reward_grants
+     set redeemed_at = now()
+     where id = (
+       select id from reward_grants
+       where customer_token = $1 and redeemed_at is null
+       order by created_at asc, id asc
+       limit 1
+     )`,
     [token]
   );
 
@@ -430,6 +540,11 @@ async function maybeGrantBirthday(customer) {
      where token = $2
      returning *`,
     [today.year, customer.token]
+  );
+
+  await pool.query(
+    `insert into reward_grants (customer_token, source, emoji, label) values ($1, 'birthday', '🎂', 'Birthday Coffee')`,
+    [customer.token]
   );
 
   await logEvent(customer.token, 'birthday_reward');
@@ -1170,6 +1285,7 @@ module.exports = {
   getSignupChannelBreakdown,
   getActiveSignupChannels,
   claimChannelBonus,
+  getPendingRewards,
   getMarketingSegments,
   getMarketingSegmentCustomers,
   customersToCsv,
