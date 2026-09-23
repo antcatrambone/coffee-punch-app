@@ -4,6 +4,17 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>My Punch Card</title>
+
+<!-- Add-to-home-screen support: manifest.json covers Chrome/Android,
+     the apple-* tags below cover iOS Safari (which ignores manifest.json
+     for most of this and needs its own meta tags). -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#5c1220" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Coffee Club" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
@@ -27,7 +38,10 @@
 
       <div class="lifetime-line" id="lifetimeLine"></div>
 
-      <div class="reward-banner" id="rewardBanner">🎉 Free coffee unlocked! Show this to staff.</div>
+      <div class="reward-banner" id="rewardBanner">
+        <div class="reward-badges" id="rewardBadges"></div>
+        <div class="reward-banner-text" id="rewardBannerText">Show this to staff to redeem.</div>
+      </div>
 
       <div class="contact-line" id="contactLine"></div>
     </div>
@@ -37,7 +51,31 @@
       <div id="qrcode"></div>
     </div>
 
+    <button class="switch-link" id="addToHomeScreenLink">📲 Add this card to your home screen</button>
     <button class="switch-link" id="switchLink">Not you? Use a different email/phone</button>
+  </div>
+
+  <!-- One-time highlighted prompt, shown right after signup (or whenever
+       Chrome's install prompt becomes available). The persistent link
+       above always works too, even after this is dismissed. -->
+  <div class="install-banner" id="installBanner">
+    <span id="installBannerText">Add your punch card to your home screen for one-tap access next time!</span>
+    <div class="install-banner-actions">
+      <button class="install-banner-btn" id="installBtn">Add</button>
+      <button class="install-banner-dismiss" id="installDismissBtn">Not now</button>
+    </div>
+  </div>
+
+  <!-- iOS has no programmatic install prompt, so this is the fallback:
+       plain instructions for the Share-sheet flow, shown on tap. -->
+  <div class="ios-install-overlay" id="iosInstallOverlay">
+    <div class="ios-install-card">
+      <button class="ios-install-close" id="iosInstallOverlayClose">×</button>
+      <p class="ios-install-title">Add to Home Screen</p>
+      <p>1. Tap the <strong>Share</strong> icon <span class="ios-share-icon">⬆️</span> in Safari's toolbar.</p>
+      <p>2. Scroll down and tap <strong>"Add to Home Screen."</strong></p>
+      <p>3. Tap <strong>"Add"</strong> — your punch card now opens like an app!</p>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -46,5 +84,6 @@
   <script src="js/config.js"></script>
   <script src="js/sounds.js"></script>
   <script src="js/card.js"></script>
+  <script src="js/install-prompt.js"></script>
 </body>
 </html>
