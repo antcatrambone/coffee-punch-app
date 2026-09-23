@@ -103,6 +103,62 @@ async function init() {
     on conflict (threshold) do nothing;
   `);
 
+  // Where a signup came from — the in-store QR code by default, or a
+  // specific marketing campaign/event (e.g. a Thanksgiving 5K). The
+  // customer never picks this themselves (self-reported channel is
+  // unreliable) — it's set entirely by which QR code/link they used to
+  // land on the signup form, via a `?channel=<slug>` URL param that
+  // server.js resolves and passes into createCustomer() below.
+  //
+  // `signup_bonus_punches`/`signup_bonus_rewards` are what let a campaign
+  // hand out an incentive immediately at signup (e.g. "free coffee right
+  // off the bat") without any special-case code — createCustomer() just
+  // reads whatever this row says and applies it. Adding a new campaign
+  // later is a data change (insert a row here), not a code change.
+  await pool.query(`
+    create table if not exists signup_channels (
+      slug text primary key,
+      label text not null,
+      signup_bonus_punches integer not null default 0,
+      signup_bonus_rewards integer not null default 0,
+      is_active boolean not null default true,
+      created_at timestamptz not null default now()
+    );
+  `);
+  await pool.query(`
+    insert into signup_channels (slug, label)
+    values ('in_store', 'In-Store')
+    on conflict (slug) do nothing;
+  `);
+  await pool.query(`
+    alter table customers
+    add column if not exists signup_channel text not null default 'in_store' references signup_channels(slug);
+  `);
+  // This app only ever talks to Postgres directly with a privileged role
+  // (see the Pool above), never through Supabase's public REST API — RLS
+  // with no policies blocks that separate public API path with zero
+  // effect on the app itself. Same reasoning as every other table here.
+  await pool.query(`alter table signup_channels enable row level security;`);
+
+  // Which campaign bonuses a customer has already claimed — separate from
+  // signup_channel above (which records where they *originally* signed
+  // up, forever, for the dashboard's "sign-ups by channel" breakdown).
+  // This table is what makes it safe to let a customer who already has a
+  // punch card also claim a *different* campaign's bonus later (e.g. an
+  // existing regular scanning a Thanksgiving 5K QR): the primary key
+  // guarantees each (customer, channel) pair is only ever claimed once,
+  // no matter how many times they scan the same QR or how many requests
+  // land at the same time.
+  await pool.query(`
+    create table if not exists channel_claims (
+      customer_token uuid not null references customers(token) on delete cascade,
+      channel_slug text not null references signup_channels(slug),
+      claimed_at timestamptz not null default now(),
+      primary key (customer_token, channel_slug)
+    );
+  `);
+  await pool.query(`alter table channel_claims enable row level security;`);
+
   // Records every SMS send attempt from the marketing segments page,
   // whether or not it actually went out. `status` is 'simulated' when no
   // SMS provider is configured yet (see sendSmsViaProvider below), so the
@@ -141,6 +197,7 @@ function rowToCustomer(row) {
     freeRewards: row.free_rewards,
     redeemedRewards: row.redeemed_rewards,
     totalCoffees: row.total_coffees,
+    signupChannel: row.signup_channel,
     isTest: row.is_test,
     createdAt: row.created_at,
   };
@@ -170,11 +227,43 @@ async function findByContact({ email, phone }) {
   return rowToCustomer(rows[0]);
 }
 
-async function createCustomer({ token, email, phone, firstName, lastName, birthday, marketingOptIn }) {
-  const optIn = !!marketingOptIn;
+// Looks up a signup channel by slug. Returns null if the slug doesn't
+// exist or has been deactivated — callers should fall back to the
+// 'in_store' channel rather than fail the signup over a bad/stale QR code.
+async function getSignupChannel(slug) {
+  if (!slug) return null;
   const { rows } = await pool.query(
-    `insert into customers (token, email, phone, first_name, last_name, birthday, marketing_opt_in, marketing_opt_in_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+    `select slug, label, signup_bonus_punches, signup_bonus_rewards
+     from signup_channels where slug = $1 and is_active`,
+    [slug]
+  );
+  return rows[0] || null;
+}
+
+async function getActiveSignupChannels() {
+  const { rows } = await pool.query(
+    `select slug, label, signup_bonus_punches, signup_bonus_rewards
+     from signup_channels where is_active order by created_at`
+  );
+  return rows;
+}
+
+// `channelSlug` records where this signup came from (defaults to
+// 'in_store' if missing, unrecognized, or inactive — never blocks a real
+// customer over a bad QR code) — this is permanent, for the dashboard's
+// "sign-ups by channel" breakdown, and is separate from whatever bonus
+// actually gets applied. The customer starts at zero punches/rewards
+// regardless of channel; claimChannelBonus() (below, called separately by
+// server.js right after this) is what actually grants a campaign's
+// incentive, since that same logic also has to work for an *existing*
+// customer claiming a bonus later, not just a brand-new signup.
+async function createCustomer({ token, email, phone, firstName, lastName, birthday, marketingOptIn, channelSlug }) {
+  const optIn = !!marketingOptIn;
+  const channel = (await getSignupChannel(channelSlug)) || { slug: 'in_store' };
+
+  const { rows } = await pool.query(
+    `insert into customers (token, email, phone, first_name, last_name, birthday, marketing_opt_in, marketing_opt_in_at, signup_channel)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
     [
       token,
       email || null,
@@ -184,11 +273,63 @@ async function createCustomer({ token, email, phone, firstName, lastName, birthd
       birthday || null,
       optIn,
       optIn ? new Date() : null,
+      channel.slug,
     ]
   );
   await logEvent(token, 'signup');
   if (optIn) await logEvent(token, 'marketing_opt_in');
   return rowToCustomer(rows[0]);
+}
+
+// Grants a signup channel's bonus (bonus punches and/or an outright free
+// reward) to a customer — but only the first time, ever, for that
+// specific (customer, channel) pair. This is deliberately *not* tied to
+// "is this a new signup" — it runs the same way whether someone is
+// scanning a campaign QR for the very first time ever, or they've had a
+// punch card for a year and are now scanning a *different* campaign's QR
+// (e.g. an existing regular claiming the Thanksgiving 5K bonus). The
+// primary key on channel_claims is what makes "only the first time" safe
+// even against someone scanning the same QR twice in a row.
+//
+// Returns { claimed, customer }. `claimed` is false (customer unchanged)
+// if: the channel doesn't exist/is inactive, it has no bonus configured,
+// or this customer already claimed it before.
+async function claimChannelBonus(token, channelSlug, punchesNeeded) {
+  const channel = await getSignupChannel(channelSlug);
+  const hasBonus = channel && ((channel.signup_bonus_punches || 0) > 0 || (channel.signup_bonus_rewards || 0) > 0);
+  if (!hasBonus) {
+    return { claimed: false, customer: await findByToken(token) };
+  }
+
+  const claim = await pool.query(
+    `insert into channel_claims (customer_token, channel_slug) values ($1, $2)
+     on conflict (customer_token, channel_slug) do nothing
+     returning customer_token`,
+    [token, channel.slug]
+  );
+  if (claim.rows.length === 0) {
+    // Already claimed this channel's bonus before — no-op.
+    return { claimed: false, customer: await findByToken(token) };
+  }
+
+  const customer = await findByToken(token);
+  if (!customer) return { claimed: false, customer: null };
+
+  let punches = customer.punches + (channel.signup_bonus_punches || 0);
+  let bonusRewardsFromPunches = 0;
+  if (punchesNeeded && punches >= punchesNeeded) {
+    bonusRewardsFromPunches = Math.floor(punches / punchesNeeded);
+    punches = punches % punchesNeeded;
+  }
+  const freeRewards = customer.freeRewards + (channel.signup_bonus_rewards || 0) + bonusRewardsFromPunches;
+  const totalCoffees = customer.totalCoffees + (channel.signup_bonus_punches || 0);
+
+  const { rows } = await pool.query(
+    `update customers set punches = $1, free_rewards = $2, total_coffees = $3 where token = $4 returning *`,
+    [punches, freeRewards, totalCoffees, token]
+  );
+  await logEvent(token, 'campaign_bonus_claimed');
+  return { claimed: true, customer: rowToCustomer(rows[0]) };
 }
 
 // Adds one punch, rolling over into a free reward at punchesNeeded.
@@ -608,7 +749,7 @@ async function getOwnerDashboard({ weeks = 12, days = 14, vipWindow = 'all', gra
     pool.query(`
       select count(*)::int as n from events e
       join customers c on c.token = e.customer_token
-      where e.event_type in ('reward_earned', 'birthday_reward') and not c.is_test
+      where e.event_type in ('reward_earned', 'birthday_reward', 'campaign_bonus_claimed') and not c.is_test
     `),
     pool.query(`
       select
@@ -650,6 +791,32 @@ async function getOwnerDashboard({ weeks = 12, days = 14, vipWindow = 'all', gra
       totalCoffees: r.total_coffees,
     })),
   };
+}
+
+// ---------- owner dashboard: signups by acquisition channel ----------
+//
+// Every customer is tagged with the channel they signed up through (see
+// signup_channels / createCustomer() above) — this answers "where are our
+// regulars actually coming from," which is exactly what makes a campaign
+// like a Thanksgiving 5K QR code provable rather than anecdotal. Left-joins
+// signup_channels so a channel that's since been deactivated (a past
+// campaign) still shows its historical signups with its real label,
+// instead of disappearing or falling back to its raw slug.
+async function getSignupChannelBreakdown() {
+  const { rows } = await pool.query(`
+    select
+      c.signup_channel as slug,
+      coalesce(sc.label, c.signup_channel) as label,
+      count(*)::int as signups,
+      coalesce(sum(c.total_coffees), 0)::int as punches,
+      coalesce(sum(c.redeemed_rewards), 0)::int as redeemed
+    from customers c
+    left join signup_channels sc on sc.slug = c.signup_channel
+    where not c.is_test
+    group by c.signup_channel, sc.label
+    order by signups desc
+  `);
+  return rows;
 }
 
 // ---------- marketing: customer segmentation ----------
@@ -1000,6 +1167,9 @@ module.exports = {
   getStats,
   getDashboardStats,
   getOwnerDashboard,
+  getSignupChannelBreakdown,
+  getActiveSignupChannels,
+  claimChannelBonus,
   getMarketingSegments,
   getMarketingSegmentCustomers,
   customersToCsv,
