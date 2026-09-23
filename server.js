@@ -91,6 +91,15 @@ function publicCustomer(c) {
   };
 }
 
+// Same as publicCustomer(), plus the list of this customer's currently
+// unredeemed free coffees (each with the emoji/label for where it came
+// from) — every customer-facing response includes this so the card can
+// show one badge per reward instead of a single generic line.
+async function withPendingRewards(c) {
+  const pendingRewards = await db.getPendingRewards(c.token);
+  return { ...publicCustomer(c), pendingRewards };
+}
+
 function requireStaffPin(req, res, next) {
   const pin = req.headers['x-staff-pin'] || (req.body && req.body.pin);
   if (pin !== STAFF_PIN) {
@@ -162,7 +171,7 @@ app.post(
     }
 
     if (isNew || bonusClaimed) broadcastStats();
-    res.json(publicCustomer(customer));
+    res.json(await withPendingRewards(customer));
   })
 );
 
@@ -174,7 +183,7 @@ app.get(
 
     const { customer: updated, birthdayGranted } = await db.maybeGrantBirthday(customer);
     if (birthdayGranted) broadcastStats();
-    res.json({ ...publicCustomer(updated), birthdayGranted });
+    res.json({ ...(await withPendingRewards(updated)), birthdayGranted });
   })
 );
 
@@ -337,7 +346,7 @@ app.post(
 
     const { customer: updated, birthdayGranted } = await db.maybeGrantBirthday(customer);
     if (birthdayGranted) broadcastStats();
-    res.json({ ...publicCustomer(updated), birthdayGranted });
+    res.json({ ...(await withPendingRewards(updated)), birthdayGranted });
   })
 );
 
@@ -349,7 +358,7 @@ app.post(
     const result = await db.addPunch(token, PUNCHES_NEEDED);
     if (!result) return res.status(404).json({ error: 'Card not found.' });
 
-    const payload = { ...publicCustomer(result.customer), rewardEarned: result.rewardEarned };
+    const payload = { ...(await withPendingRewards(result.customer)), rewardEarned: result.rewardEarned };
     io.to(result.customer.token).emit('punch-added', payload);
     broadcastStats();
     res.json(payload);
@@ -369,7 +378,7 @@ app.post(
       return res.status(400).json({ error: 'This customer has no free coffee to redeem.' });
     }
 
-    const payload = publicCustomer(result.customer);
+    const payload = await withPendingRewards(result.customer);
     io.to(result.customer.token).emit('reward-redeemed', payload);
     broadcastStats();
     res.json(payload);
