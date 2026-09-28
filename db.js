@@ -962,6 +962,23 @@ function segmentDefinitions(punchesNeeded) {
   const oneAway = Math.max(punchesNeeded - 1, 0);
   return [
     {
+      id: 'all_opted_in',
+      label: 'All Opted-In Customers',
+      description: 'Every customer who has agreed to marketing contact — the full list, not narrowed to any particular behavior segment.',
+      // Deliberately ignores the includeNonOptedIn toggle: the entire point
+      // of this segment is "everyone who opted in," so letting the toggle
+      // turn it into "everyone, period" would silently mislabel the export.
+      // Every other segment still respects that toggle normally.
+      buildQuery: () => ({
+        text: `
+          select c.token, c.first_name, c.last_name, c.email, c.phone, c.marketing_opt_in, c.total_coffees, c.created_at
+          from customers c
+          where not c.is_test and c.marketing_opt_in
+          order by c.created_at desc
+        `,
+      }),
+    },
+    {
       id: 'signed_up_today',
       label: 'Signed Up Today',
       description: "Joined the program today — a welcome or first-visit nudge lands best while it's fresh.",
