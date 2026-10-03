@@ -945,6 +945,37 @@ async function getSignupChannelBreakdown() {
   return rows;
 }
 
+// ---------- owner dashboard: redemptions by type ----------
+//
+// Answers "of the free coffees actually redeemed, where did they come
+// from" — a regular 5-punch reward, a birthday coffee, or a specific
+// campaign (Thanksgiving 5K, Runfest, etc.). Reads reward_grants (see
+// claimChannelBonus/addPunch/maybeGrantBirthday above, which are what
+// write a row here every time a free coffee is granted) rather than
+// customers.redeemed_rewards, since that column is just a flat lifetime
+// counter with no memory of *why* each reward was earned. Left-joins
+// signup_channels the same way getSignupChannelBreakdown() does, so a
+// since-deactivated campaign still shows its real label historically.
+async function getRedemptionsByType() {
+  const { rows } = await pool.query(`
+    select
+      case
+        when rg.source = 'punches' then 'Regular (5-Punch) Reward'
+        when rg.source = 'birthday' then 'Birthday Reward'
+        when rg.source = 'channel' then coalesce(sc.label, rg.channel_slug, 'Campaign')
+        else initcap(rg.source)
+      end as label,
+      count(*)::int as redemptions
+    from reward_grants rg
+    join customers c on c.token = rg.customer_token
+    left join signup_channels sc on sc.slug = rg.channel_slug
+    where rg.redeemed_at is not null and not c.is_test
+    group by 1
+    order by redemptions desc
+  `);
+  return rows;
+}
+
 // ---------- marketing: customer segmentation ----------
 //
 // This is the data layer behind the owner-facing "Marketing" page: a set
@@ -1311,6 +1342,7 @@ module.exports = {
   getDashboardStats,
   getOwnerDashboard,
   getSignupChannelBreakdown,
+  getRedemptionsByType,
   getActiveSignupChannels,
   claimChannelBonus,
   getPendingRewards,
