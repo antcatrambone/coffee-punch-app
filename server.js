@@ -252,6 +252,18 @@ app.get(
   })
 );
 
+// Redemptions broken down by what kind of free coffee it was — a regular
+// 5-punch reward, a birthday coffee, or a specific campaign. See
+// getRedemptionsByType() in db.js.
+app.get(
+  '/api/owner/redemptions',
+  requireStaffPin,
+  asyncRoute(async (req, res) => {
+    const redemptions = await db.getRedemptionsByType();
+    res.json({ redemptions });
+  })
+);
+
 // ---------- owner-facing marketing segmentation ----------
 //
 // Lets the owner browse and export customer lists cut by simple,
