@@ -361,6 +361,54 @@
     });
   }
 
+  // ---------- redemptions by type ----------
+  // Same proportional bar-list look as the channel breakdown above — the
+  // question here ("what kind of free coffee are people actually
+  // redeeming") is the same kind of "compare a handful of buckets"
+  // question, not a trend over time.
+  function renderRedemptionsList(redemptions) {
+    const el = document.getElementById('redemptionsList');
+    const empty = document.getElementById('redemptionsListEmpty');
+    el.innerHTML = '';
+    if (!redemptions || redemptions.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    const total = redemptions.reduce((sum, r) => sum + r.redemptions, 0);
+    const max = Math.max(1, ...redemptions.map((r) => r.redemptions));
+    redemptions.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'channel-row';
+      row.style.animationDelay = `${i * 90}ms`;
+
+      const head = document.createElement('div');
+      head.className = 'channel-row-head';
+      const label = document.createElement('span');
+      label.className = 'channel-label';
+      label.textContent = r.label;
+      const count = document.createElement('span');
+      count.className = 'channel-count';
+      count.textContent = `${r.redemptions} redemption${r.redemptions === 1 ? '' : 's'}`;
+      head.append(label, count);
+
+      const barTrack = document.createElement('div');
+      barTrack.className = 'channel-bar-track';
+      const bar = document.createElement('div');
+      bar.className = 'channel-bar';
+      bar.style.width = `${Math.round((r.redemptions / max) * 100)}%`;
+      barTrack.appendChild(bar);
+
+      const sub = document.createElement('div');
+      sub.className = 'channel-sub';
+      const pct = total > 0 ? Math.round((r.redemptions / total) * 100) : 0;
+      sub.textContent = `${pct}% of all redemptions`;
+
+      row.append(head, barTrack, sub);
+      el.appendChild(row);
+    });
+  }
+
   // ---------- VIP list ----------
   function renderVipList(vip) {
     const el = document.getElementById('vipList');
@@ -434,6 +482,7 @@
     renderVipList(dashboardData.vip);
 
     if (channelData) renderChannelList(channelData.channels);
+    if (redemptionsData) renderRedemptionsList(redemptionsData.redemptions);
   }
 
   async function loadDashboard() {
@@ -454,12 +503,20 @@
     return res.json();
   }
 
+  async function loadRedemptions() {
+    const res = await fetch('/api/owner/redemptions', { headers: { 'x-staff-pin': getPin() } });
+    if (!res.ok) throw new Error('Could not load redemptions breakdown.');
+    return res.json();
+  }
+
   let channelData = null;
+  let redemptionsData = null;
 
   async function refresh() {
-    const [dashboard, channels] = await Promise.all([loadDashboard(), loadChannels()]);
+    const [dashboard, channels, redemptions] = await Promise.all([loadDashboard(), loadChannels(), loadRedemptions()]);
     dashboardData = dashboard;
     channelData = channels;
+    redemptionsData = redemptions;
     renderAll();
   }
 
