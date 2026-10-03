@@ -516,11 +516,22 @@ function shopToday() {
   return { year: parseInt(parts.year, 10), month: parseInt(parts.month, 10), day: parseInt(parts.day, 10) };
 }
 
-// If today is the customer's birthday (in the shop's timezone) and they
-// haven't already received this year's birthday coffee, grants one and
-// logs it. Safe to call every time a customer's card is loaded — it's a
-// no-op on every day that isn't their birthday, and only fires once per
-// year even if they open the app multiple times that day.
+// If today falls anywhere in the customer's birthday month (in the shop's
+// timezone) and they haven't already received this year's birthday coffee,
+// grants one and logs it. Safe to call every time a customer's card is
+// loaded — it's a no-op in every month that isn't their birthday month, and
+// only fires once per year no matter how many times they open the app
+// during that month.
+//
+// Deliberately month-wide rather than the exact day: the exact-day version
+// silently missed anyone who didn't happen to open their card on that one
+// specific date, which in practice meant a lot of real birthdays went
+// ungranted with no way to catch up later. Widening to the whole month
+// means almost everyone actually gets the reward they're entitled to — the
+// tradeoff is that a customer who signs up for the first time during their
+// own birthday month gets this bonus immediately (their first card load
+// already calls this function), rather than only customers who happened to
+// sign up on their exact birthday.
 async function maybeGrantBirthday(customer) {
   if (!customer || !customer.birthday) {
     return { customer, birthdayGranted: false };
@@ -528,9 +539,9 @@ async function maybeGrantBirthday(customer) {
 
   const bday = new Date(customer.birthday);
   const today = shopToday();
-  const isBirthdayToday = bday.getUTCMonth() + 1 === today.month && bday.getUTCDate() === today.day;
+  const isBirthdayMonth = bday.getUTCMonth() + 1 === today.month;
 
-  if (!isBirthdayToday || customer.birthdayRewardYear === today.year) {
+  if (!isBirthdayMonth || customer.birthdayRewardYear === today.year) {
     return { customer, birthdayGranted: false };
   }
 
