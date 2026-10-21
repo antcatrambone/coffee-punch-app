@@ -71,10 +71,15 @@
   <div class="ios-install-overlay" id="iosInstallOverlay">
     <div class="ios-install-card">
       <button class="ios-install-close" id="iosInstallOverlayClose">×</button>
-      <p class="ios-install-title">Add to Home Screen</p>
-      <p>1. Tap the <strong>Share</strong> icon <span class="ios-share-icon">⬆️</span> in Safari's toolbar.</p>
-      <p>2. Scroll down and tap <strong>"Add to Home Screen."</strong></p>
-      <p>3. Tap <strong>"Add"</strong> — your punch card now opens like an app!</p>
+      <p class="ios-install-title" id="installOverlayTitle">Add to Home Screen</p>
+      <!-- Steps are swapped in by install-prompt.js to match the visitor's
+           device/browser (iPhone/iPad, Android, in-app browser, desktop).
+           The iPhone steps below are just the default if JS never runs. -->
+      <div id="installSteps">
+        <p>1. Tap the <strong>Share</strong> icon <span class="ios-share-icon">⬆️</span> in Safari's toolbar.</p>
+        <p>2. Scroll down and tap <strong>"Add to Home Screen."</strong></p>
+        <p>3. Tap <strong>"Add"</strong> — your punch card now opens like an app!</p>
+      </div>
     </div>
   </div>
 
