@@ -357,7 +357,7 @@ body {
   font-size: 0.95rem;
 }
 
-/* One circular badge per unredeemed free coffee â€” its emoji shows where
+/* One circular badge per unredeemed free coffee — its emoji shows where
    that reward came from (birthday, a specific campaign, or the default
    party emoji for a plain 5-punch reward), so multiple rewards on one
    card read as distinct, tappable-feeling badges rather than a count. */
@@ -387,6 +387,120 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
+/* A reward the customer hasn't seen before: pulses with a glow ring a few
+   times so the new badge stands out from ones already on the card. */
+.reward-badge.is-new {
+  animation: badgePop 0.35s ease, badgeNewPulse 1.1s ease-in-out 0.4s 4;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+@keyframes badgeNewPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.8); }
+  50% { transform: scale(1.18); box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); }
+}
+
+/* Full-screen "you earned a free coffee!" celebration (see
+   showRewardCelebration in card.js). */
+.reward-celebrate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(30, 10, 14, 0.62);
+  animation: celebrateFadeIn 0.25s ease;
+}
+
+.reward-celebrate.closing {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.reward-celebrate-card {
+  width: 100%;
+  max-width: 320px;
+  padding: 28px 22px 22px;
+  border-radius: 20px;
+  background: #fff;
+  text-align: center;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  animation: celebrateCardIn 0.5s cubic-bezier(.2, 1.4, .4, 1);
+}
+
+.reward-celebrate-emojis {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.reward-celebrate-emoji {
+  display: inline-block;
+  font-size: 3.4rem;
+  line-height: 1.1;
+  animation: celebrateEmojiBounce 0.9s ease both;
+}
+
+.reward-celebrate-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  color: var(--brown-dark);
+}
+
+.reward-celebrate-detail {
+  margin-top: 4px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+
+.reward-celebrate-hint {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.reward-celebrate-btn {
+  margin-top: 18px;
+  padding: 11px 28px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+@keyframes celebrateFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes celebrateCardIn {
+  from { opacity: 0; transform: scale(0.6) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes celebrateEmojiBounce {
+  0% { opacity: 0; transform: scale(0.2) rotate(-20deg); }
+  55% { opacity: 1; transform: scale(1.35) rotate(8deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reward-badge.is-new,
+  .reward-celebrate-emoji,
+  .reward-celebrate-card {
+    animation: none;
+  }
+}
+
 @keyframes bannerIn {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -396,7 +510,7 @@ body {
   /* Lives outside .card now, as its own element below the card, so the
      card itself reads as a self-contained physical object and the QR
      looks like a separate scan step underneath it. Transparent on purpose
-     â€” no white box â€” so it sits right on the page background. */
+     — no white box — so it sits right on the page background. */
   margin-top: 22px;
   text-align: center;
 }
@@ -595,7 +709,7 @@ body {
   box-shadow: 0 10px 24px rgba(92, 18, 32, 0.1);
   /* Default breathing room whenever panels stack directly on top of each
      other (e.g. marketing.html's preview panel followed by the Recent
-     Sends panel) â€” without this they render flush against one another
+     Sends panel) — without this they render flush against one another
      since neither has its own spacing rule. .line-chart-panel below sets
      its own margin-top and wins where both classes are present. */
   margin-top: 18px;
@@ -667,7 +781,7 @@ body {
 }
 
 /* Sized exactly to the <svg> it wraps (block-level, so it collapses to
-   the svg's own 150px height) â€” the hover tooltip is positioned with
+   the svg's own 150px height) — the hover tooltip is positioned with
    plain percentages of this box, which line up 1:1 with the svg's
    viewBox units regardless of how wide the panel actually renders. */
 .line-chart-area-wrap {
@@ -681,7 +795,7 @@ body {
   overflow: visible;
 }
 
-/* Invisible touch/hover/focus target for each chart point â€” sized well
+/* Invisible touch/hover/focus target for each chart point — sized well
    past the visible dot (which is deliberately tiny) so it's actually easy
    to hit with a finger or a mouse. Plain HTML divs rather than SVG shapes,
    positioned in real pixels via the percentage-based left/top set in JS,
@@ -762,7 +876,7 @@ body {
   stroke: none;
 }
 
-/* The actual visible marker â€” small on purpose (7px) so a dense chart
+/* The actual visible marker — small on purpose (7px) so a dense chart
    (e.g. 30 daily points) doesn't turn into a strip of overlapping circles.
    The white ring (box-shadow) is what makes it read clearly against the
    line and filled area behind it rather than just blending in. */
