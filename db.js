@@ -307,13 +307,16 @@ async function getActiveSignupChannels() {
 // show "🎂 🦃 🎉" instead of just a count.
 async function getPendingRewards(token) {
   const { rows } = await pool.query(
-    `select emoji, label, source, channel_slug, created_at
+    `select id, emoji, label, source, channel_slug, created_at
      from reward_grants
      where customer_token = $1 and redeemed_at is null
      order by created_at asc, id asc`,
     [token]
   );
   return rows.map((r) => ({
+    // Stable id lets the card page tell "a reward I've already seen" from
+    // "a brand new one" so it can celebrate only the new ones.
+    id: String(r.id),
     emoji: r.emoji,
     label: r.label,
     source: r.source,
@@ -928,19 +931,47 @@ async function getOwnerDashboard({ weeks = 12, days = 14, vipWindow = 'all', gra
 // signup_channels so a channel that's since been deactivated (a past
 // campaign) still shows its historical signups with its real label,
 // instead of disappearing or falling back to its raw slug.
+//
+// Starts from signup_channels (not customers) so an active campaign shows
+// up on the dashboard the moment it exists — even at 0 sign-ups — and also
+// counts `claims`: how many people claimed that campaign's free coffee,
+// including existing members who never "signed up" through it (they're
+// invisible to the signups count, since signup_channel only records where
+// someone *originally* joined). `existing_claims` is the subset of claims
+// from customers who originally joined some other way.
 async function getSignupChannelBreakdown() {
   const { rows } = await pool.query(`
     select
-      c.signup_channel as slug,
-      coalesce(sc.label, c.signup_channel) as label,
-      count(*)::int as signups,
-      coalesce(sum(c.total_coffees), 0)::int as punches,
-      coalesce(sum(c.redeemed_rewards), 0)::int as redeemed
-    from customers c
-    left join signup_channels sc on sc.slug = c.signup_channel
-    where not c.is_test
-    group by c.signup_channel, sc.label
-    order by signups desc
+      sc.slug as slug,
+      sc.label as label,
+      coalesce(s.signups, 0) as signups,
+      coalesce(s.punches, 0) as punches,
+      coalesce(s.redeemed, 0) as redeemed,
+      coalesce(cl.claims, 0) as claims,
+      coalesce(cl.existing_claims, 0) as existing_claims
+    from signup_channels sc
+    left join (
+      select
+        signup_channel as slug,
+        count(*)::int as signups,
+        coalesce(sum(total_coffees), 0)::int as punches,
+        coalesce(sum(redeemed_rewards), 0)::int as redeemed
+      from customers
+      where not is_test
+      group by 1
+    ) s on s.slug = sc.slug
+    left join (
+      select
+        cc.channel_slug as slug,
+        count(*)::int as claims,
+        (count(*) filter (where c.signup_channel <> cc.channel_slug))::int as existing_claims
+      from channel_claims cc
+      join customers c on c.token = cc.customer_token
+      where not c.is_test
+      group by 1
+    ) cl on cl.slug = sc.slug
+    where sc.is_active or coalesce(s.signups, 0) > 0 or coalesce(cl.claims, 0) > 0
+    order by coalesce(s.signups, 0) desc, coalesce(cl.claims, 0) desc, sc.created_at asc
   `);
   return rows;
 }
