@@ -101,12 +101,16 @@
   // for a plain 5-punch reward) instead of a single generic line — so a
   // customer holding more than one reward can see at a glance what each
   // one is, and staff can see it too when the card is shown at checkout.
+  // Ids of rewards the customer hasn't seen before this render — their
+  // badges get a short attention-grabbing pulse (see .reward-badge.is-new).
+  let highlightIds = new Set();
+
   function renderRewardBadges(c) {
     const rewards = c.pendingRewards || [];
     rewardBadges.innerHTML = '';
     rewards.forEach((r) => {
       const badge = document.createElement('span');
-      badge.className = 'reward-badge';
+      badge.className = 'reward-badge' + (highlightIds.has(String(r.id)) ? ' is-new' : '');
       badge.title = r.label || 'Free Coffee';
       badge.textContent = r.emoji || '🎉';
       rewardBadges.appendChild(badge);
@@ -160,6 +164,104 @@
     }
   }
 
+  // ---------- "you earned a free coffee!" celebration ----------
+  // Which rewards has this customer already seen on this device? Stored
+  // per card in localStorage as a list of reward ids. Anything pending that
+  // isn't in that list is new — it gets a full-screen celebration so it's
+  // obvious something was just earned (previously a scanned campaign QR
+  // just quietly opened the card with an extra badge on it).
+  const SEEN_KEY = `seenRewardIds:${token}`;
+
+  function loadSeen() {
+    try {
+      const raw = localStorage.getItem(SEEN_KEY);
+      return raw === null ? null : JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveSeen(rewards) {
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify((rewards || []).map((r) => String(r.id))));
+    } catch (e) {
+      /* storage unavailable — worst case, celebrations just don't dedupe */
+    }
+  }
+
+  function findNewRewards(rewards) {
+    const list = rewards || [];
+    const seen = loadSeen();
+    if (seen === null) {
+      // First time this device has loaded this card since celebrations
+      // existed: don't replay every reward already sitting on the card —
+      // only celebrate ones that were earned moments ago.
+      const cutoff = Date.now() - 15 * 60 * 1000;
+      return list.filter((r) => new Date(r.earnedAt).getTime() >= cutoff);
+    }
+    return list.filter((r) => !seen.includes(String(r.id)));
+  }
+
+  function showRewardCelebration(newRewards, opts) {
+    if (!newRewards || newRewards.length === 0) return;
+    const skipFx = opts && opts.skipFx;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'reward-celebrate';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-live', 'polite');
+
+    const box = document.createElement('div');
+    box.className = 'reward-celebrate-card';
+
+    const emojis = document.createElement('div');
+    emojis.className = 'reward-celebrate-emojis';
+    newRewards.forEach((r, i) => {
+      const e = document.createElement('span');
+      e.className = 'reward-celebrate-emoji';
+      e.style.animationDelay = `${i * 140}ms`;
+      e.textContent = r.emoji || '🎉';
+      emojis.appendChild(e);
+    });
+
+    const title = document.createElement('div');
+    title.className = 'reward-celebrate-title';
+    title.textContent =
+      newRewards.length === 1 ? 'You earned a free coffee!' : `You earned ${newRewards.length} free coffees!`;
+
+    const labels = Array.from(new Set(newRewards.map((r) => r.label || 'Free Coffee')));
+    const detail = document.createElement('div');
+    detail.className = 'reward-celebrate-detail';
+    detail.textContent = labels.join(' · ');
+
+    const hint = document.createElement('div');
+    hint.className = 'reward-celebrate-hint';
+    hint.textContent = 'Show this card to staff to redeem it.';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'reward-celebrate-btn';
+    btn.textContent = 'Awesome!';
+
+    box.append(emojis, title, detail, hint, btn);
+    overlay.appendChild(box);
+
+    let timer = null;
+    function close() {
+      clearTimeout(timer);
+      overlay.classList.add('closing');
+      setTimeout(() => overlay.remove(), 250);
+    }
+    btn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    timer = setTimeout(close, 9000);
+
+    document.body.appendChild(overlay);
+    if (!skipFx) celebrateReward();
+  }
+
   function celebrateBirthday(c) {
     renderRewardBadges(c);
     rewardBannerText.textContent = `Happy birthday${c.firstName ? ', ' + c.firstName : ''}! We added a free coffee just for you.`;
@@ -175,6 +277,8 @@
       return;
     }
     state = await res.json();
+    const newRewards = findNewRewards(state.pendingRewards);
+    highlightIds = new Set(newRewards.map((r) => String(r.id)));
     renderCardTitle(state);
     renderGrid(state.punchesNeeded);
     updateSlots(state.punches);
@@ -182,10 +286,16 @@
     renderContact(state);
     renderLifetime(state);
     renderQR();
+    saveSeen(state.pendingRewards);
 
     if (state.birthdayGranted) {
       // Give the page a moment to settle before celebrating.
       setTimeout(() => celebrateBirthday(state), 500);
+    }
+    if (newRewards.length > 0) {
+      // The birthday celebration above already plays the sound/confetti,
+      // so only add those here when it didn't.
+      setTimeout(() => showRewardCelebration(newRewards, { skipFx: !!state.birthdayGranted }), 600);
     }
   }
 
@@ -204,20 +314,26 @@
 
       state = payload;
       setTimeout(() => {
+        const newRewards = findNewRewards(state.pendingRewards);
+        highlightIds = new Set(newRewards.map((r) => String(r.id)));
         renderStatus(state);
         renderLifetime(state);
+        saveSeen(state.pendingRewards);
         if (wasRewardRun) {
           updateSlots(0);
           celebrateReward();
         } else {
           updateSlots(state.punches);
         }
+        showRewardCelebration(newRewards, { skipFx: wasRewardRun });
       }, 420);
     });
 
     socket.on('reward-redeemed', (payload) => {
       state = payload;
+      highlightIds = new Set();
       renderStatus(state);
+      saveSeen(state.pendingRewards);
       updateSlots(state.punches);
     });
   }
