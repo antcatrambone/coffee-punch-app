@@ -354,7 +354,15 @@
 
       const sub = document.createElement('div');
       sub.className = 'channel-sub';
-      sub.textContent = `${c.punches} lifetime punch${c.punches === 1 ? '' : 'es'} · ${c.redeemed} redeemed`;
+      let subText = `${c.punches} lifetime punch${c.punches === 1 ? '' : 'es'} · ${c.redeemed} redeemed`;
+      // Campaign channels hand out a free coffee on claim — show how many
+      // people claimed it, and how many of those were existing members
+      // (who don't count as "sign-ups" since they joined another way).
+      if (c.claims > 0) {
+        subText += ` · ${c.claims} free coffee${c.claims === 1 ? '' : 's'} claimed`;
+        if (c.existing_claims > 0) subText += ` (${c.existing_claims} by existing members)`;
+      }
+      sub.textContent = subText;
 
       row.append(head, barTrack, sub);
       el.appendChild(row);
