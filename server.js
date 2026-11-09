@@ -175,6 +175,28 @@ app.post(
   })
 );
 
+// Called by index.html when someone who already has a card on this device
+// scans a campaign QR code (e.g. ?channel=runfest) — the signup form is
+// skipped for them, so this is the only way their campaign bonus gets
+// claimed. Same once-per-customer-per-campaign guarantee as /api/signup
+// (see claimChannelBonus() in db.js), so calling it repeatedly is harmless.
+app.post(
+  '/api/claim-channel',
+  asyncRoute(async (req, res) => {
+    const channelSlug = normalizeChannelSlug(req.body.channel);
+    const token = typeof req.body.token === 'string' ? req.body.token : '';
+    const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
+    if (!channelSlug || !looksLikeUuid) return res.status(400).json({ error: 'Missing card or campaign.' });
+
+    const customer = await db.findByToken(token);
+    if (!customer) return res.status(404).json({ error: 'Card not found.' });
+
+    const result = await db.claimChannelBonus(customer.token, channelSlug, PUNCHES_NEEDED);
+    if (result.claimed) broadcastStats();
+    res.json({ claimed: result.claimed });
+  })
+);
+
 app.get(
   '/api/customer/:token',
   asyncRoute(async (req, res) => {
