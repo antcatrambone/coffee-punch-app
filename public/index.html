@@ -119,18 +119,35 @@
       return `${PLACEHOLDER_YEAR}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
 
-    // Auto-load a card already created on this device.
-    const savedToken = localStorage.getItem('punchCardToken');
-    if (savedToken) {
-      window.location.href = `card.html?token=${encodeURIComponent(savedToken)}`;
-    }
-
     // Which QR code/link brought someone here — e.g. a Thanksgiving 5K
     // card would link to "?channel=thanksgiving_5k". Read once from the
     // URL and sent along at signup; the customer never sees or picks this
     // themselves; server.js falls back to the in-store default if it's
     // missing or unrecognized.
     const signupChannel = new URLSearchParams(window.location.search).get('channel');
+
+    // Auto-load a card already created on this device. If they got here by
+    // scanning a campaign QR code (e.g. Runfest), claim that campaign's
+    // bonus for their existing card first — otherwise someone who already
+    // has a card on this phone would skip straight to it and never get the
+    // free coffee. The server only ever grants it once per campaign.
+    const savedToken = localStorage.getItem('punchCardToken');
+    if (savedToken) {
+      const goToCard = () => {
+        window.location.href = `card.html?token=${encodeURIComponent(savedToken)}`;
+      };
+      if (signupChannel) {
+        fetch('/api/claim-channel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: savedToken, channel: signupChannel }),
+        })
+          .catch(() => {})
+          .finally(goToCard);
+      } else {
+        goToCard();
+      }
+    }
 
     submitBtn.addEventListener('click', async () => {
       errorMsg.textContent = '';
